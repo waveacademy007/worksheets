@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Wave Worksheets</title>
+<meta name="description" content="Pick questions from the question bank and get a print-ready worksheet PDF.">
+<meta name="theme-color" content="#1d4f8c">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d4f8c'/%3E%3Cpath d='M18 18h28M18 30h28M18 42h18' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="app.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+</head>
+<body>
+
+<!-- Loading -->
+<div class="screen center" id="scrLoading"><div class="spinner" aria-label="Loading"></div></div>
+
+<!-- Login -->
+<div class="screen center" id="scrLogin" hidden>
+  <div class="auth">
+    <h1 class="appname" id="loginName"></h1>
+    <p class="note" id="loginSub">Pick questions, get a print-ready worksheet.</p>
+    <button class="btn google" id="gBtn"><svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Continue with Google</button>
+    <div class="or"><span>or use email</span></div>
+    <form id="authForm" novalidate>
+      <label class="f" id="nameL" hidden>Your name<input type="text" id="authName" autocomplete="name"></label>
+      <label class="f">Email<input type="email" id="authEmail" autocomplete="email" required></label>
+      <label class="f" id="passL">Password<input type="password" id="authPass" autocomplete="current-password" minlength="6"></label>
+      <button class="btn primary" type="submit" id="authGo">Sign in</button>
+    </form>
+    <p class="authmsg" id="authMsg" role="status"></p>
+    <div class="authlinks">
+      <button class="link" id="toSignup">New teacher? Create account</button>
+      <button class="link" id="toSignin" hidden>Already have an account? Sign in</button>
+      <button class="link" id="toReset">Forgot password?</button>
+    </div>
+    <p class="demo-note" id="demoNote" hidden>Demo mode: data is saved only in this browser. Add your Firebase settings in <code>js/config.js</code> to go live. The first account created becomes the admin.</p>
+  </div>
+</div>
+
+<!-- Waiting for activation -->
+<div class="screen center" id="scrPending" hidden>
+  <div class="auth">
+    <h1 class="appname">Account created</h1>
+    <p id="pendText"></p>
+    <p class="note" id="pendPlans"></p>
+    <div class="contact"><span class="phone" id="pendPhone"></span>
+      <a class="btn primary" id="pendWa" target="_blank" rel="noopener">WhatsApp</a>
+      <a class="btn" id="pendCall">Call</a></div>
+    <div class="bar"><button class="btn" id="pendCheck">Check again</button><span class="grow"></span><button class="btn" id="pendOut">Sign out</button></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="scrApp" hidden>
+<header class="top">
+  <div class="brand"><h1 id="brandName"></h1><span class="who"><span id="whoName"></span> <button class="link" id="signOut">Sign out</button></span></div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-tab="bank">Questions</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="ws">Worksheet <span class="count" id="tabCount">0</span></button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="set">Settings</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="admin" id="adminTab" hidden>Admin</button>
+  </nav>
+</header>
+<div class="planbar" id="planBar" hidden></div>
+
+<main>
+  <section id="v-bank">
+    <div class="filters">
+      <label class="f">Class<select id="fClass"></select></label>
+      <label class="f">Subject<select id="fSubject"></select></label>
+      <label class="f">Chapter<select id="fChapter"></select></label>
+      <label class="f">Exam<select id="fExam"></select></label>
+      <label class="f">Type<select id="fType"></select></label>
+      <label class="f">Search<input type="text" id="fSearch" placeholder="Word in question"></label>
+    </div>
+    <div class="bar">
+      <span class="grow" id="shownInfo"></span>
+      <button class="btn" id="selAll">Tick all shown</button>
+      <button class="btn" id="selNone">Clear all ticks</button>
+    </div>
+    <div class="qlist" id="qlist"></div>
+  </section>
+
+  <section id="v-ws" hidden>
+    <div class="panel">
+      <div class="row2">
+        <label class="f">Class line<input type="text" id="wClass"></label>
+        <label class="f">Topic<input type="text" id="wTopic"></label>
+        <label class="f">Font<select id="wFont"><option value="garamond">Garamond</option><option value="stix">STIX Two (Times style)</option><option value="source">Source Serif</option></select></label>
+      </div>
+      <div class="row2">
+        <label class="check"><input type="checkbox" id="wGroup" checked> Group by type (Section A, B…)</label>
+        <label class="check"><input type="checkbox" id="wMarks"> Show marks</label>
+        <label class="check"><input type="checkbox" id="wKey"> Answer key table at the end</label>
+        <label class="check"><input type="checkbox" id="wWm" checked> Watermark</label>
+      </div>
+    </div>
+    <p class="planbar" id="wsHint" hidden style="border-radius:8px;margin:12px 0 0">Your academy name is empty. <button class="link" id="wsHintGo">Add it in Settings</button> so it appears on the worksheet header.</p>
+    <div class="bar"><span class="grow" id="pageInfo"></span></div>
+    <div class="sheets" id="sheets"></div>
+  </section>
+
+  <section id="v-set" hidden>
+    <div class="panel">
+      <h2>Your branding</h2>
+      <div class="row2">
+        <label class="f">Academy name<input type="text" id="sAcademy"></label>
+        <label class="f">Teacher name<input type="text" id="sTeacher"></label>
+        <label class="f">Phone<input type="tel" id="sPhone"></label>
+        <label class="f">Watermark text<input type="text" id="sWm"></label>
+      </div>
+      <div class="logo-box">
+        <div class="lb-title">Logo</div>
+        <div id="logoNone">
+          <button class="btn primary" id="lOpen">Upload Logo (JPG / PNG)</button>
+          <p class="note" style="margin-top:6px">No logo added. The worksheet header shows only your academy name.</p>
+        </div>
+        <div id="logoHave" hidden>
+          <div class="bar" style="margin:0;align-items:center">
+            <div id="logoPrev" class="lthumb"></div>
+            <span class="grow" id="logoInfo"></span>
+            <button class="btn" id="lsResize">Change size</button>
+            <button class="btn" id="lReplace">Replace</button>
+            <button class="btn" id="sLogoClear">Remove</button>
+          </div>
+        </div>
+      </div>
+      <p class="note">These details appear on every worksheet header and footer.</p>
+    </div>
+  </section>
+
+  <section id="v-admin" hidden>
+    <div class="panel">
+      <h2>Question bank</h2>
+      <p class="note">Questions you add here are visible to every active teacher.</p>
+      <div class="bar" style="margin:0;flex-wrap:wrap">
+        <button class="btn primary" id="addOpen">+ Add question</button>
+        <button class="btn" id="impOpen">Import from Excel</button>
+        <button class="btn" id="wdOpen">Import from Word</button>
+        <a class="btn" href="Question_Bank_Template.xlsx" download>Excel template</a>
+        <button class="btn" id="seedBtn">Load sample questions</button>
+      </div>
+      <p class="note" id="adminMsg" role="status"></p>
+    </div>
+    <div class="panel" id="backupPanel" hidden>
+      <h2>Backup</h2>
+      <p class="note">Your questions are saved only on this phone. Download a backup now and then, and keep it in Google Drive or WhatsApp. If the phone is lost or the app is removed, restore from it.</p>
+      <div id="bkStats" class="note" style="font-weight:600;color:var(--fg)"></div>
+      <div class="bar" style="margin:0;flex-wrap:wrap">
+        <button class="btn primary" id="bkDown">Download backup</button>
+        <span class="btn filebtn">Restore from backup<input type="file" id="bkIn" accept=".json,application/json" aria-label="Choose backup file"></span>
+      </div>
+      <p class="note" id="bkMsg" role="status"></p>
+    </div>
+    <div class="panel" id="installPanel" hidden>
+      <h2>Install on this phone</h2>
+      <p class="note" id="installText">Install the app to open it from your home screen, even without internet.</p>
+      <div class="bar" style="margin:0"><button class="btn primary" id="installBtn" hidden>Install app</button></div>
+    </div>
+    <div class="panel" id="teachersPanel">
+      <div class="bar" style="margin:0"><h2 class="grow">Teachers</h2><button class="btn" id="usersReload">Refresh</button></div>
+      <label class="f">Search<input type="text" id="uSearch" placeholder="Name or email"></label>
+      <div class="ulist" id="uList"></div>
+    </div>
+  </section>
+</main>
+
+<div class="stickybar"><div class="in">
+  <span class="grow" id="selInfo">0 questions ticked</span>
+  <button class="btn" id="goWs">Preview</button>
+  <button class="btn" id="sharePdf" hidden>Share</button>
+  <button class="btn primary" id="dlPdf">Download PDF</button>
+</div></div>
+</div>
+
+<div id="measure" aria-hidden="true"></div>
+
+<div class="modal" id="addModal" hidden role="dialog" aria-modal="true" aria-labelledby="addTitle">
+  <div class="mbox wide">
+    <div class="mhead"><h2 id="addTitle">Add a question</h2><button class="btn" id="addX" aria-label="Close">✕</button></div>
+      
+      <div class="row2">
+        <label class="f">Type<select id="aType"></select></label>
+        <label class="f">Exams<input type="text" id="aExam" value="CBSE"></label>
+        <label class="f">Class<select id="aClass"><option>9</option><option selected>10</option><option>11</option><option>12</option></select></label>
+        <label class="f">Subject<select id="aSubject"><option>Science</option><option>Maths</option><option>Physics</option><option>Chemistry</option><option>Biology</option></select></label>
+        <label class="f">Chapter<input type="text" id="aChapter" placeholder="e.g. Life Processes"></label>
+        <label class="f">Marks<input type="text" id="aMarks" value="1"></label>
+      </div>
+      <label class="f" id="aCaseL" hidden>Case passage<textarea id="aCase"></textarea></label>
+      <label class="f"><span id="aTextLabel">Question</span><textarea id="aText"></textarea></label>
+      <div class="f">Diagram / image (optional)
+        <div class="bar" style="margin:4px 0 0;align-items:center">
+          <span class="btn filebtn" id="aImgBtn">Add image<input type="file" id="aImgIn" accept="image/*" aria-label="Choose image for question"></span>
+          <img id="aImgPrev" alt="Chosen image" hidden style="max-height:70px;max-width:140px;border:1px solid var(--line);border-radius:6px;background:#fff">
+          <select id="aImgW" hidden aria-label="Image width" style="width:auto"><option value="40">Small</option><option value="70" selected>Medium</option><option value="100">Full width</option></select>
+          <button class="btn" id="aImgDel" hidden>Remove image</button>
+        </div>
+        <span id="aImgMsg" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--muted)"></span>
+      </div>
+      <label class="f" id="aReasonL" hidden>Reason (R)<textarea id="aReason"></textarea></label>
+      <div class="row2" id="aOpts">
+        <label class="f">Option a<input type="text" id="aO0"></label>
+        <label class="f">Option b<input type="text" id="aO1"></label>
+        <label class="f">Option c<input type="text" id="aO2"></label>
+        <label class="f">Option d<input type="text" id="aO3"></label>
+      </div>
+      <label class="f">Answer<input type="text" id="aAns" placeholder="e.g. b"></label>
+      <p class="note">The question is saved to the online question bank and is visible to all active teachers.</p>
+      <div class="bar" style="margin:0"><span class="grow" id="aErr" style="color:var(--warn)"></span><button class="btn" id="addCancel">Cancel</button><button class="btn primary" id="addSave">Save question</button></div>
+  </div>
+</div>
+<div class="modal" id="wdModal" hidden role="dialog" aria-modal="true" aria-labelledby="wdTitle">
+  <div class="mbox wide">
+    <div class="mhead"><h2 id="wdTitle">Import from Word</h2><button class="btn" id="wdClose" aria-label="Close">✕</button></div>
+    <div id="wdStart" style="display:grid;gap:12px">
+      <div class="drop">
+        <span class="btn primary filebtn">Choose Word file (.docx)<input type="file" id="wdFile" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" aria-label="Choose Word file"></span>
+        <p class="note">Questions should be numbered (Q1., 1. or Word's own numbering) with options a) b) c) d). Diagrams, equations, Assertion-Reason and an answer key at the end are picked up automatically.</p>
+      </div>
+    </div>
+    <div id="wdReview" hidden style="display:grid;gap:10px">
+      <div id="wdSummary" style="font-weight:600"></div>
+      <div class="row2">
+        <label class="f">Exams<input type="text" id="wdExam" value="CBSE"></label>
+        <label class="f">Class<select id="wdCls"><option>9</option><option>10</option><option>11</option><option>12</option></select></label>
+        <label class="f">Subject<select id="wdSubject"><option>Science</option><option>Maths</option><option>Physics</option><option>Chemistry</option><option>Biology</option></select></label>
+        <label class="f">Chapter<input type="text" id="wdChapter" placeholder="e.g. Human Heart"></label>
+      </div>
+      <p class="note">Check each question. Untick any you don't want and fix the type if it was guessed wrong. Rows marked in orange need a look.</p>
+      <div id="wdList" class="wlist"></div>
+      <div class="bar" style="margin:0"><button class="btn" id="wdBack">Choose another file</button><span class="grow"></span><button class="btn primary" id="wdGo">Import ticked questions</button></div>
+    </div>
+    <p class="note" id="wdMsg" role="status"></p>
+  </div>
+</div>
+<div class="modal" id="imModal" hidden role="dialog" aria-modal="true" aria-labelledby="imTitle">
+  <div class="mbox">
+    <div class="mhead"><h2 id="imTitle">Import questions</h2><button class="btn" id="imClose" aria-label="Close">✕</button></div>
+    <div id="imStart" style="display:grid;gap:12px">
+      <p class="note">Fill the question bank template in Excel or Google Sheets, then bring it in here.</p>
+      <div class="bar" style="margin:0"><a class="btn" href="Question_Bank_Template.xlsx" download>Download Excel template</a></div>
+      <div class="drop">
+        <span class="btn primary filebtn">Choose Excel / CSV file<input type="file" id="imFile" multiple accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,image/*" aria-label="Choose Excel file"></span>
+        <p class="note">If your questions use images, select the image files together with the Excel file.</p>
+      </div>
+      <details id="imPasteBox"><summary style="cursor:pointer;font-weight:600">Or paste rows from Google Sheets / Excel</summary>
+        <p class="note" style="margin-top:6px">Select the rows including the header row, copy, and paste here. Works in the phone app too.</p>
+        <textarea id="imPaste" placeholder="Paste copied rows here" style="min-height:110px"></textarea>
+        <div class="bar" style="margin:8px 0 0"><span class="grow"></span><button class="btn primary" id="imPasteGo">Check pasted rows</button></div>
+      </details>
+    </div>
+    <div id="imReview" hidden style="display:grid;gap:10px">
+      <div id="imSummary" style="font-weight:600"></div>
+      <div id="imProblems" class="note" style="max-height:180px;overflow:auto"></div>
+      <div class="bar" style="margin:0"><button class="btn" id="imBack">Choose another file</button><span class="grow"></span><button class="btn primary" id="imGo">Import</button></div>
+    </div>
+    <p class="note" id="imMsg" role="status"></p>
+  </div>
+</div>
+<div class="modal" id="logoModal" hidden role="dialog" aria-modal="true" aria-labelledby="lmTitle">
+  <div class="mbox">
+    <div class="mhead"><h2 id="lmTitle">Upload logo</h2><button class="btn" id="lmClose" aria-label="Close">✕</button></div>
+    <div id="lmPick" class="drop">
+      <span class="btn primary filebtn">Choose JPG / PNG file<input type="file" class="logoIn" accept="image/*" aria-label="Choose logo file"></span>
+      <p class="note">JPG or PNG, any size. Extra blank border is trimmed and the logo is fitted to the header automatically. On a computer you can also paste or drop the image here.</p>
+    </div>
+    <div id="lmEdit" hidden>
+      <div class="hdr-prev" id="hdrPrev"></div>
+      <label class="f" style="margin-top:12px">Logo size: <span id="lsVal" style="font-weight:700"></span>
+        <input type="range" id="lsRange" min="10" max="40" step="1" style="width:100%;accent-color:var(--accent)"></label>
+      <p class="note">Size is set automatically. Move the slider only if you want it bigger or smaller.</p>
+      <div class="bar" style="margin:10px 0 0"><span class="btn filebtn">Choose another<input type="file" class="logoIn" accept="image/*" aria-label="Choose logo file"></span><span class="grow"></span><button class="btn" id="lsCancel">Cancel</button><button class="btn primary" id="lsAdd">Add logo</button></div>
+    </div>
+    <p class="note" id="logoMsg" role="status"></p>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

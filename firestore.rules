@@ -1,0 +1,53 @@
+rules_version = '2';
+// Who can do what:
+//  - Anyone signed in can create THEIR OWN user profile, but cannot give themselves a subscription.
+//  - Teachers can change only their own name and branding.
+//  - Only teachers with an active subscription (planUntil in the future) or admins can read questions.
+//  - Only admins (a document in /admins/{uid}) can add/delete questions and activate teachers.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function isActive() {
+      return isAdmin() || (signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && me().get('planUntil', null) is timestamp
+        && me().planUntil > request.time);
+    }
+
+    match /admins/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if false;            // add admins by hand in the Firebase console
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['email', 'name', 'createdAt', 'planUntil', 'branding'])
+        && request.resource.data.planUntil == null;
+      allow update: if isAdmin()
+        || (signedIn() && request.auth.uid == uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['branding', 'name']));
+      allow delete: if isAdmin();
+    }
+
+    match /questions/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    match /qimages/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    match /meta/{doc} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+  }
+}
