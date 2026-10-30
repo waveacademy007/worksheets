@@ -5,7 +5,7 @@ const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, AR_OPTS, SUBJECTS, CLASSES } from "./constants.js";
+import { TYPES, AR_OPTS, SUBJECTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js";
 import { SAMPLE } from "./sample-questions.js";
 
 const $ = id => document.getElementById(id);
@@ -24,7 +24,7 @@ const FONTS = {
   source: { fam: '"Source Serif 4", "Bookman Old Style", Georgia, serif', size: 13.4 }
 };
 const DEFAULTS = { academy: "", teacher: "", phone: "", wm: "", logo: "", logoSize: 25, cls: "", topic: "",
-  group: false, marks: false, key: true, wmOn: true, font: "garamond" };
+  group: false, marks: false, key: true, wmOn: true, srcOn: false, font: "garamond" };
 
 let api, user = null, profile = null;
 let settings = { ...DEFAULTS };          // branding + worksheet options, saved to the teacher's account
@@ -166,7 +166,7 @@ function saveSet() {
   paintAvatars(); $("drPhone").textContent = settings.phone || "";
 }
 const bind = [["sAcademy", "academy"], ["sTeacher", "teacher"], ["sPhone", "phone"], ["sWm", "wm"], ["wClass", "cls"], ["wTopic", "topic"]];
-const checks = [["wGroup", "group"], ["wMarks", "marks"], ["wKey", "key"], ["wWm", "wmOn"]];
+const checks = [["wGroup", "group"], ["wMarks", "marks"], ["wKey", "key"], ["wWm", "wmOn"], ["wSrc", "srcOn"]];
 bind.forEach(([id, k]) => $(id).addEventListener("input", () => { settings[k] = $(id).value; saveSet(); schedule(); }));
 checks.forEach(([id, k]) => $(id).addEventListener("change", () => { settings[k] = $(id).checked; saveSet(); schedule(); }));
 $("wFont").onchange = () => { settings.font = $("wFont").value; saveSet(); schedule(); };
@@ -229,6 +229,8 @@ function initHome() {
   fillSel($("fExam"), [["", "All exams"], ["CBSE", "CBSE"], ["JEE", "JEE"], ["NEET", "NEET"]]);
   fillSel($("fClass"), CLASSES.map(c => [String(c), "Class " + roman(c)]));
   fillSel($("fType"), Object.entries(TYPES), "All types");
+  fillSel($("fSrc"), SOURCES.map(x => [x, x]), "All sources");
+  fillSel($("wdSrc"), SOURCES.map(x => [x, x]), "None");
   const last = store.get("ws_last", { cls: "10", exam: "" });
   $("fClass").value = last.cls || "10"; $("fExam").value = last.exam || "";
   nav.cls = +$("fClass").value;
@@ -280,12 +282,12 @@ function renderChapters() {
 }
 $("chList").addEventListener("click", e => {
   const b = e.target.closest("[data-ch]"); if (!b) return;
-  nav.chapter = b.dataset.ch; $("fType").value = ""; $("fSearch").value = "";
+  nav.chapter = b.dataset.ch; $("fType").value = ""; $("fSrc").value = ""; $("fSearch").value = "";
   show("bank"); loadQuestions();
 });
 
 // ================= Questions of one chapter =================
-["fType"].forEach(id => $(id).onchange = renderList);
+["fType", "fSrc"].forEach(id => $(id).onchange = renderList);
 $("fSearch").addEventListener("input", renderList);
 async function loadQuestions() {
   const { cls, subject, chapter } = nav;
@@ -305,8 +307,8 @@ async function loadQuestions() {
   renderList();
 }
 function shown() {
-  const e = $("fExam").value, t = $("fType").value, w = $("fSearch").value.trim().toLowerCase();
-  return current.filter(q => (!e || (q.exam || []).includes(e)) && (!t || q.type === t) &&
+  const e = $("fExam").value, t = $("fType").value, sr = $("fSrc").value, w = $("fSearch").value.trim().toLowerCase();
+  return current.filter(q => (!e || (q.exam || []).includes(e)) && (!t || q.type === t) && (!sr || (q.src || []).some(x => x.s === sr)) &&
     (!w || ((q.text || "") + " " + (q.case || "") + " " + (q.reason || "")).toLowerCase().includes(w)));
 }
 function renderList() {
@@ -315,7 +317,7 @@ function renderList() {
   $("shownInfo").textContent = `${list.length} of ${current.length} questions`;
   $("qlist").innerHTML = list.length ? list.map(q => `<label class="q ${picked.has(q.id) ? "on" : ""}" data-id="${esc(q.id)}">
     <input type="checkbox" ${picked.has(q.id) ? "checked" : ""} aria-label="Use this question">
-    <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span><span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}</div>
+    <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span><span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}</div>
     ${q.case ? `<div class="opts">${esc(q.case)}</div>` : ""}<div>${esc(q.text).replace(/\n/g, "<br>")}</div>
     ${q.type === "AR" ? `<div class="opts">R: ${esc(q.reason)}</div>` : ""}
     ${q.type === "MCQ" ? `<div class="opts">${(q.opts || []).map((o, i) => "abcd"[i] + ") " + esc(o)).join(" &nbsp; ")}</div>` : ""}
@@ -376,7 +378,7 @@ async function loadPickedImages() {
 // ================= My Worksheets & Drafts =================
 let currentDraft = null;           // {id, name} while editing a draft
 let lastSavedSig = "";
-const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "font"];
+const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "srcOn", "font"];
 function snapshot(kind, name) {
   const qs = JSON.parse(JSON.stringify([...picked.values()]));
   return { kind, name, count: qs.length, questions: qs, ws: Object.fromEntries(WS_KEYS.map(k => [k, settings[k]])), updatedAt: Date.now() };
@@ -501,6 +503,11 @@ $("addOpen").onclick=()=>{$("addModal").hidden=false;$("aClass").value=String(na
 $("addCancel").onclick=$("addX").onclick=()=>{$("addModal").hidden=true};
 $("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")$("addModal").hidden=true});
 
+function srcRow(s="",y=""){const d=document.createElement("div");d.className="srcrow";
+  d.innerHTML=`<select aria-label="Source">${SOURCES.map(x=>`<option${x===s?" selected":""}>${x}</option>`).join("")}</select><input type="text" inputmode="numeric" maxlength="4" placeholder="Year" aria-label="Year" value="${esc(y)}"><button class="btn" type="button" aria-label="Remove source">✕</button>`;
+  d.querySelector("button").onclick=()=>d.remove();$("aSrcRows").appendChild(d)}
+$("aSrcAdd").onclick=()=>srcRow();
+function readSrcRows(){return [...$("aSrcRows").children].map(r=>({s:r.querySelector("select").value,y:(r.querySelector("input").value.trim().match(/^(19|20)\d{2}$/)||[""])[0]}))}
 let aImg=null;
 function aImgUI(){const on=!!aImg;$("aImgPrev").hidden=!on;$("aImgW").hidden=!on;$("aImgDel").hidden=!on;if(on)$("aImgPrev").src=aImg.src;$("aImgBtn").firstChild.nodeValue=on?"Change image":"Add image"}
 $("aImgIn").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];if(!f)return;
@@ -522,10 +529,11 @@ $("addSave").onclick=async()=>{
   if(!q.exam.length)q.exam=["CBSE"];
   if(t==="MCQ")q.opts=opts; if(t==="AR"){q.opts=AR_OPTS;q.reason=$("aReason").value.trim()} if(t==="CS")q.case=$("aCase").value.trim();
   if(aImg){q.img=aImg.src;q.imgAR=aImg.ar;q.imgW=+$("aImgW").value}
+  const qsrc=readSrcRows();if(qsrc.length)q.src=qsrc;
   $("addSave").disabled=true;$("aErr").textContent="Saving…";
   try{await saveToBank([q])}catch(err){$("aErr").textContent="Could not save. Check your internet and try again.";$("addSave").disabled=false;return}
   $("addSave").disabled=false;
-  ["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns"].forEach(i=>$(i).value="");aImg=null;aImgUI();$("aErr").textContent="";$("addModal").hidden=true;
+  ["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns"].forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;aImgUI();$("aErr").textContent="";$("addModal").hidden=true;
   toast("Question saved to the bank");
 };
 
@@ -534,7 +542,7 @@ $("addSave").onclick=async()=>{
 const TYPE_MAP={mcq:"MCQ",ar:"AR","assertion reason":"AR","assertion-reason":"AR",sa:"SA",short:"SA","short answer":"SA",la:"LA",long:"LA","long answer":"LA",cs:"CS","case study":"CS",case:"CS"};
 let imReady=[];
 const norm=h=>String(h||"").toLowerCase().replace(/\(.*?\)/g,"").replace(/[^a-z]/g,"");
-const COLS={exam:"exam",class:"cls",subject:"subject",chapter:"chapter",type:"type",question:"text",assertion:"text",reason:"reason",passage:"case",optiona:"o0",optionb:"o1",optionc:"o2",optiond:"o3",answer:"ans",marks:"marks",difficulty:"diff",image:"img",imagesize:"imgSize"};
+const COLS={source:"src",year:"year",exam:"exam",class:"cls",subject:"subject",chapter:"chapter",type:"type",question:"text",assertion:"text",reason:"reason",passage:"case",optiona:"o0",optionb:"o1",optionc:"o2",optiond:"o3",answer:"ans",marks:"marks",difficulty:"diff",image:"img",imagesize:"imgSize"};
 function imShow(step){$("imStart").hidden=step!=="start";$("imReview").hidden=step!=="review"}
 function parseTSV(t){const rows=[];let row=[],cur="",q=false;
   for(let i=0;i<t.length;i++){const c=t[i];
@@ -566,6 +574,7 @@ function rowsToQuestions(rows,images){
       marks:parseFloat(v.marks)||({MCQ:1,AR:1,SA:2,LA:5,CS:4}[type])};
     if(type==="MCQ")q.opts=[v.o0,v.o1,v.o2,v.o3];if(type==="AR"){q.opts=AR_OPTS;q.reason=v.reason}if(type==="CS")q.case=v.case;
     if(img){q.img=img.src;q.imgAR=img.ar;q.imgW={small:40,medium:70,full:100}[(v.imgSize||"medium").toLowerCase()]||70}
+    const src=parseSources(v.src,v.year);if(src.length)q.src=src;
     out.push(q)});
   return {out,probs,note:skipped?`${skipped} yellow example row${skipped>1?"s":""} from the template skipped.`:""};
 }
@@ -722,12 +731,15 @@ function parseWord(paras){
       const ls=q.lines.slice();const intro=/^read the|case\s*(study|based)/i.test(ls[0]||"")?ls.shift():"";
       const subIx=ls.findIndex(l=>/^\(?(i|1|a)\)/i.test(l));passage=(subIx>0?ls.slice(0,subIx):ls.slice(0,1)).join(" ");text=(subIx>0?ls.slice(subIx):ls.slice(1)).join("\n")||intro}
     else type=/\b(explain|describe|draw|derive|discuss|elaborate|differentiate)\b/i.test(text)&&text.length>90?"LA":"SA";
+    let src=[];
+    const tm=text.match(/\s*[\[(]([^\[\]()]{3,60})[\])]\s*$/);
+    if(tm){const p=parseSources(tm[1]);if(p.length&&/\d{4}|ncert|exemplar|jee|neet|cbse|pyq|sample|board/i.test(tm[1])){src=p;text=text.slice(0,tm.index).trim()}}
     let ans=q.ans||key[n]||"";
     if(type==="MCQ"){const o=[0,1,2,3].map(i=>(q.opts[i]||"").trim());if(o.some(x=>!x))issues.push("fewer than 4 options");q.opts=o;if(!/^[abcd]$/.test(ans)){if(ans)issues.push("answer is not a–d");else issues.push("no answer found");ans=/^[abcd]$/.test(ans)?ans:""}}
     if(type==="AR"&&!q.reason)issues.push("Reason not found");
     if(type==="AR"&&!/^[abcd]$/.test(ans))issues.push("no answer found");
     if(!text)issues.push("question text is empty");
-    return {n,type,text,opts:q.opts,reason:q.reason,passage,ans,img:q.imgs[0]||null,issues,use:!!text}});
+    return {n,type,text,opts:q.opts,reason:q.reason,passage,ans,img:q.imgs[0]||null,issues,use:!!text,src}});
   return {meta,qs:res};
 }
 let wdData=null;
@@ -742,7 +754,7 @@ function wdRender(){const {meta,qs}=wdData;
       ${q.type==="AR"?`<div class="opts">R: ${esc(q.reason)}</div>`:""}
       ${q.type==="MCQ"?`<div class="opts">${q.opts.map((o,j)=>"abcd"[j]+") "+(o?esc(o):"<i>missing</i>")).join(" &nbsp; ")}</div>`:""}
       ${q.img?`<img class="qthumb" src="${q.img.src}" alt="Diagram">`:""}
-      <div class="opts">Answer: <b>${esc(q.ans||"–")}</b>${q.issues.length?` · <span style="color:var(--warn)">${esc(q.issues.join(", "))}</span>`:""}</div></div></div>`).join("")||`<div class="empty">No numbered questions were found. Questions should start with Q1., 1. or Word's own numbering.</div>`;
+      <div class="opts">${q.src&&q.src.length?`<span class="chip srcchip">${esc(srcText(q))}</span> `:""}Answer: <b>${esc(q.ans||"–")}</b>${q.issues.length?` · <span style="color:var(--warn)">${esc(q.issues.join(", "))}</span>`:""}</div></div></div>`).join("")||`<div class="empty">No numbered questions were found. Questions should start with Q1., 1. or Word's own numbering.</div>`;
   $("wdGo").disabled=!qs.some(q=>q.use);
 }
 $("wdList").addEventListener("change",e=>{const i=+e.target.dataset.i;if(Number.isNaN(i))return;
@@ -758,7 +770,9 @@ $("wdGo").onclick=async()=>{const cls=+$("wdCls").value,subject=$("wdSubject").v
   const exam=$("wdExam").value.split(/[ ,\/]+/).map(x=>x.toUpperCase()).filter(Boolean);
   const add=wdData.qs.filter(q=>q.use).map((q,k)=>{const o={exam:exam.length?exam:["CBSE"],cls,subject,chapter,type:q.type,text:q.text,ans:q.ans,marks:{MCQ:1,AR:1,SA:2,LA:5,CS:4}[q.type]};
     if(q.type==="MCQ")o.opts=q.opts.map(x=>x||"");if(q.type==="AR"){o.opts=AR_OPTS;o.reason=q.reason||""}if(q.type==="CS")o.case=q.passage||"";
-    if(q.img){o.img=q.img.src;o.imgAR=q.img.ar;o.imgW=70}return o});
+    if(q.img){o.img=q.img.src;o.imgAR=q.img.ar;o.imgW=70}
+    const common=$("wdSrc").value?[{s:$("wdSrc").value,y:/^(19|20)\d{2}$/.test($("wdYear").value.trim())?$("wdYear").value.trim():""}]:[];
+    const sr=q.src&&q.src.length?q.src:common;if(sr.length)o.src=sr;return o});
   const b=$("wdGo");b.disabled=true;$("wdMsg").textContent="Saving to the question bank…";
   try{await saveToBank(add);$("wdModal").hidden=true;toast(`${add.length} question${add.length===1?"":"s"} imported from Word`)}
   catch(err){$("wdMsg").textContent="Could not save. Check your internet and try again."}finally{b.disabled=false}};
@@ -854,13 +868,14 @@ function optsHTML(list){const one=(o,i)=>`<div class="o"><span class="l">${"abcd
   let h="";for(let i=0;i<list.length;i+=2)h+=`<div class="og">${list.slice(i,i+2).map((o,j)=>one(o,i+j)).join("")}</div>`;return h}
 function qHTML(q,n){
   const mk=settings.marks?`<span class="mk">[${q.marks}]</span>`:"";
+  const st=settings.srcOn&&srcText(q)?` <span class="srctag">[${esc(srcText(q))}]</span>`:"";
   const lines=k=>'<div class="ln"></div>'.repeat(k);
   let b="";
-  if(q.type==="MCQ")b=`<div class="s">${mk}${esc(q.text)}</div>`+optsHTML(q.opts);
-  else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${esc(q.text)}</div><div class="s ar"><b>Reason (R):</b> ${esc(q.reason)}</div>`+optsHTML(AR_OPTS);
-  else if(q.type==="SA")b=`<div class="s">${mk}${esc(q.text)}</div>`+lines(4);
-  else if(q.type==="LA")b=`<div class="s">${mk}${esc(q.text)}</div>`+lines(9);
-  else if(q.type==="CS")b=`<div class="s">${mk}Read the passage and answer the questions that follow.</div><div class="case">${esc(q.case)}</div>`+q.text.split("\n").filter(Boolean).map(t=>`<div class="s">${esc(t)}</div>`).join("")+lines(5);
+  if(q.type==="MCQ")b=`<div class="s">${mk}${esc(q.text)}${st}</div>`+optsHTML(q.opts);
+  else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${esc(q.text)}${st}</div><div class="s ar"><b>Reason (R):</b> ${esc(q.reason)}</div>`+optsHTML(AR_OPTS);
+  else if(q.type==="SA")b=`<div class="s">${mk}${esc(q.text)}${st}</div>`+lines(4);
+  else if(q.type==="LA")b=`<div class="s">${mk}${esc(q.text)}${st}</div>`+lines(9);
+  else if(q.type==="CS")b=`<div class="s">${mk}Read the passage and answer the questions that follow.${st}</div><div class="case">${esc(q.case)}</div>`+q.text.split("\n").filter(Boolean).map(t=>`<div class="s">${esc(t)}</div>`).join("")+lines(5);
   if(q.img){const im=`<div class="qimg"><img src="${q.img}" alt="" style="width:${q.imgW||70}%;aspect-ratio:${q.imgAR||1.5}"></div>`;
     const tmp=document.createElement("div");tmp.innerHTML=b;const kids=[...tmp.children];
     const after=q.type==="AR"?kids[1]:q.type==="CS"?kids[1]:kids[0];
@@ -1110,9 +1125,11 @@ async function toPng(src) {
 function pptBlocks(q, n, imgPng) {
   const B = [];
   const T = (text, o = {}) => B.push({ k: "text", text, ...o });
-  if (q.type === "AR") { T(q.text, { label: `Q${n}.`, pre: "Assertion (A): " }); T(q.reason || "", { pre: "Reason (R): " }); }
-  else if (q.type === "CS") { T("Read the passage and answer the questions that follow.", { label: `Q${n}.` }); T(q.case || "", { passage: true }); }
-  else T(q.text, { label: `Q${n}.` });
+  const tag = settings.srcOn && srcText(q) ? ` [${srcText(q)}]` : "";
+  const tg = tag ? { tag } : {};
+  if (q.type === "AR") { T(q.text + tag, { label: `Q${n}.`, pre: "Assertion (A): ", ...tg }); T(q.reason || "", { pre: "Reason (R): " }); }
+  else if (q.type === "CS") { T("Read the passage and answer the questions that follow." + tag, { label: `Q${n}.`, ...tg }); T(q.case || "", { passage: true }); }
+  else T(q.text + tag, { label: `Q${n}.`, ...tg });
   if (imgPng) B.push({ k: "img", ...imgPng });
   if (q.type === "CS") (q.text || "").split("\n").filter(Boolean).forEach(t => T(t));
   if (q.type === "MCQ" || q.type === "AR") {
@@ -1162,7 +1179,7 @@ function layoutBlocks(blocks, w, pt, allowSplit) {
       if (fit < lines.length && !allowSplit) return null;
       const take = lines.slice(0, fit); lines = lines.slice(fit);
       const hh = take.length * lineH(pt);
-      pages[pages.length - 1].push({ k: "text", x: IND, y, w: w - IND, h: hh, lines: take, label: first ? b.label : null, pre: first ? b.pre : null, passage: !!b.passage, last: !lines.length });
+      pages[pages.length - 1].push({ k: "text", x: IND, y, w: w - IND, h: hh, lines: take, label: first ? b.label : null, pre: first ? b.pre : null, passage: !!b.passage, last: !lines.length, tag: b.tag || "" });
       y += hh + GAP; first = false;
       if (lines.length) newPage();
     }
@@ -1236,7 +1253,9 @@ async function makePpt(opts) {
         if (it.label) s.addText(it.label, { x: x0, y, w: it.x, h: lineH(pt), fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, valign: "top", margin: 0 });
         let body = it.lines.join(" "); const runs = [];
         if (it.pre && body.startsWith(it.pre)) { runs.push({ text: it.pre, options: { bold: true, color: PPT.GOLD } }); body = body.slice(it.pre.length); }
-        runs.push({ text: body, options: {} });
+        const tg = it.last && it.tag && body.endsWith(it.tag.trim()) ? it.tag.trim() : "";
+        if (tg) { runs.push({ text: body.slice(0, body.length - tg.length), options: {} }); runs.push({ text: tg, options: { bold: true, color: PPT.GOLD } }); }
+        else runs.push({ text: body, options: {} });
         if (it.passage) s.addShape("rect", { x, y, w: 0.05, h: it.h, fill: { color: PPT.GOLD }, line: { color: PPT.GOLD } });
         s.addText(runs, { x: it.passage ? x + 0.16 : x, y, w: it.passage ? it.w - 0.16 : it.w, h: it.h, fontFace: "Calibri", fontSize: pt, color: it.passage ? PPT.PASSAGE : PPT.WHITE, align: "justify", valign: "top", margin: 0, lineSpacingMultiple: 1.1 });
         if (!it.last && pages.length > 1 && it === items[items.length - 1]) s.addText("Continued on next slide →", { x, y: BODY_BOTTOM - 0.3, w: it.w, h: 0.3, fontFace: "Calibri", fontSize: 13, bold: true, color: PPT.GOLD, margin: 0 });

@@ -109,6 +109,7 @@
     <div class="crumb"><button class="iconbtn" data-back aria-label="Back"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div><b id="qTitle"></b><span id="qSub"></span></div></div>
     <div class="qtools">
       <select id="fType" aria-label="Question type"></select>
+      <select id="fSrc" aria-label="Source"></select>
       <input type="search" id="fSearch" placeholder="Search in this chapter" aria-label="Search">
     </div>
     <div class="bar">
@@ -139,6 +140,7 @@
         <label class="check"><input type="checkbox" id="wMarks"> Show marks</label>
         <label class="check"><input type="checkbox" id="wKey"> Answer key table at the end</label>
         <label class="check"><input type="checkbox" id="wWm" checked> Watermark</label>
+        <label class="check"><input type="checkbox" id="wSrc"> Show source &amp; year, e.g. [NEET 2019]</label>
       </div>
     </div>
     <p class="planbar" id="wsHint" hidden style="border-radius:8px;margin:12px 0 0">Your academy name is empty. <button class="link" id="wsHintGo">Add it in Profile</button> so it appears on the worksheet header.</p>
@@ -344,6 +346,10 @@
         <label class="f">Option d<input type="text" id="aO3"></label>
       </div>
       <label class="f">Answer<input type="text" id="aAns" placeholder="e.g. b"></label>
+      <div class="f">Source &amp; year (optional)
+        <div id="aSrcRows" class="srcrows"></div>
+        <button class="btn" type="button" id="aSrcAdd" style="justify-self:start">+ Add source</button>
+      </div>
       <p class="note">The question is saved to the online question bank and is visible to all active teachers.</p>
       <div class="bar" style="margin:0"><span class="grow" id="aErr" style="color:var(--warn)"></span><button class="btn" id="addCancel">Cancel</button><button class="btn primary" id="addSave">Save question</button></div>
   </div>
@@ -361,6 +367,8 @@
       <div id="wdSummary" style="font-weight:600"></div>
       <div class="row2">
         <label class="f">Exams<input type="text" id="wdExam" value="CBSE"></label>
+        <label class="f">Source (for questions without one)<select id="wdSrc"></select></label>
+        <label class="f">Year<input type="text" id="wdYear" inputmode="numeric" maxlength="4" placeholder="e.g. 2023"></label>
         <label class="f">Class<select id="wdCls"><option>9</option><option>10</option><option>11</option><option>12</option></select></label>
         <label class="f">Subject<select id="wdSubject"><option>Science</option><option>Maths</option><option>Physics</option><option>Chemistry</option><option>Biology</option></select></label>
         <label class="f">Chapter<input type="text" id="wdChapter" placeholder="e.g. Human Heart"></label>
