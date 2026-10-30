@@ -40,19 +40,48 @@ async function firebaseApi() {
     resetPassword(e) { return A.sendPasswordResetEmail(auth, e); },
     signOut() { return A.signOut(auth); },
 
-    async loadProfile(u) {
+    async loadProfile(u, referredBy) {
       const ref = F.doc(db, "users", u.uid);
       let snap = await F.getDoc(ref);
       if (!snap.exists()) {
-        await F.setDoc(ref, { email: u.email, name: u.name || "", createdAt: F.serverTimestamp(), planUntil: null, branding: {} });
+        const doc = { email: u.email, name: u.name || "", createdAt: F.serverTimestamp(), planUntil: null, branding: {} };
+        if (referredBy && referredBy !== u.uid && /^[\w-]{6,128}$/.test(referredBy)) doc.referredBy = referredBy;
+        await F.setDoc(ref, doc);
         snap = await F.getDoc(ref);
       }
       let admin = false;
       try { admin = (await F.getDoc(F.doc(db, "admins", u.uid))).exists(); } catch (e) { admin = false; }
       const d = snap.data();
-      return { admin, planUntil: toMs(d.planUntil), branding: d.branding || {}, name: d.name || "" };
+      return { admin, planUntil: toMs(d.planUntil), branding: d.branding || {}, name: d.name || "", refRewards: d.refRewards || 0, referredBy: d.referredBy || null };
     },
     saveBranding(uid, branding) { return F.updateDoc(F.doc(db, "users", uid), { branding }); },
+    // ---- my worksheets & drafts: users/{uid}/worksheets
+    async listWorksheets(kind) {
+      const uid = auth.currentUser.uid;
+      const r = await F.getDocs(F.query(F.collection(db, "users", uid, "worksheets"), F.where("kind", "==", kind)));
+      return r.docs.map(d => { const x = d.data(); return { id: d.id, name: x.name, kind: x.kind, count: x.count, ws: x.ws, updatedAt: x.updatedAt }; }).sort((a, b) => b.updatedAt - a.updatedAt);
+    },
+    async getWorksheet(id) { const s = await F.getDoc(F.doc(db, "users", auth.currentUser.uid, "worksheets", id)); return s.exists() ? { id: s.id, ...s.data() } : null; },
+    async saveWorksheet(id, data) {
+      const col = F.collection(db, "users", auth.currentUser.uid, "worksheets");
+      const ref = id ? F.doc(col, id) : F.doc(col);
+      await F.setDoc(ref, JSON.parse(JSON.stringify(data)));
+      return ref.id;
+    },
+    deleteWorksheet(id) { return F.deleteDoc(F.doc(db, "users", auth.currentUser.uid, "worksheets", id)); },
+    // ---- feedback
+    sendFeedback(f) { return F.addDoc(F.collection(db, "feedback"), { uid: auth.currentUser.uid, name: f.name || "", email: f.email || "", rating: f.rating || 0, text: f.text || "", createdAt: Date.now() }); },
+    async listFeedback() { const r = await F.getDocs(F.query(F.collection(db, "feedback"), F.orderBy("createdAt", "desc"), F.limit(200))); return r.docs.map(d => ({ id: d.id, ...d.data() })); },
+    deleteFeedback(id) { return F.deleteDoc(F.doc(db, "feedback", id)); },
+    // ---- referral reward (admin): +days to the referrer, mark the new teacher as rewarded
+    async rewardReferral(uid, referrer, ms) {
+      const rs = await F.getDoc(F.doc(db, "users", referrer)); if (!rs.exists()) return;
+      const cur = toMs(rs.data().planUntil) || 0;
+      const b = F.writeBatch(db);
+      b.update(F.doc(db, "users", referrer), { planUntil: F.Timestamp.fromMillis(Math.max(Date.now(), cur) + ms), refRewards: F.increment(1) });
+      b.update(F.doc(db, "users", uid), { referralRewarded: true });
+      await b.commit();
+    },
 
     async chapters() {
       const s = await F.getDoc(F.doc(db, "meta", "chapters"));
@@ -99,10 +128,33 @@ async function firebaseApi() {
       if (q.hasImg) b.delete(F.doc(db, "qimages", q.id));
       await b.commit();
     },
+    // Delete questions (+ their diagrams) in batches. chapterOnly = {cls, subject, chapter} or null for ALL.
+    async deleteQuestions(chapterOnly, onProgress) {
+      let total = 0;
+      for (;;) {
+        const base = F.collection(db, "questions");
+        const q = chapterOnly
+          ? F.query(base, F.where("cls", "==", chapterOnly.cls), F.where("subject", "==", chapterOnly.subject), F.where("chapter", "==", chapterOnly.chapter), F.limit(200))
+          : F.query(base, F.limit(200));
+        const r = await F.getDocs(q);
+        if (r.empty) break;
+        const b = F.writeBatch(db);
+        r.docs.forEach(d => { b.delete(d.ref); if (d.data().hasImg) b.delete(F.doc(db, "qimages", d.id)); });
+        await b.commit();
+        total += r.size; onProgress && onProgress(total);
+      }
+      if (chapterOnly) await F.setDoc(F.doc(db, "meta", "chapters"), { c: { [key(chapterOnly.cls, chapterOnly.subject)]: F.arrayRemove(chapterOnly.chapter) } }, { merge: true });
+      else {
+        // leftover diagrams without a question
+        for (;;) { const r = await F.getDocs(F.query(F.collection(db, "qimages"), F.limit(200))); if (r.empty) break; const b = F.writeBatch(db); r.docs.forEach(d => b.delete(d.ref)); await b.commit(); }
+        await F.deleteDoc(F.doc(db, "meta", "chapters"));
+      }
+      return total;
+    },
     async users() {
       const r = await F.getDocs(F.query(F.collection(db, "users"), F.orderBy("createdAt", "desc"), F.limit(1000)));
       const admins = new Set((await F.getDocs(F.collection(db, "admins"))).docs.map(d => d.id));
-      return r.docs.map(d => { const x = d.data(); return { uid: d.id, email: x.email, name: x.name, createdAt: toMs(x.createdAt), planUntil: toMs(x.planUntil), admin: admins.has(d.id) }; });
+      return r.docs.map(d => { const x = d.data(); return { uid: d.id, email: x.email, name: x.name, createdAt: toMs(x.createdAt), planUntil: toMs(x.planUntil), admin: admins.has(d.id), referredBy: x.referredBy || null, referralRewarded: !!x.referralRewarded }; });
     },
     setPlan(uid, ms) { return F.updateDoc(F.doc(db, "users", uid), { planUntil: ms == null ? null : F.Timestamp.fromMillis(ms) }); }
   };
@@ -115,6 +167,7 @@ function demoApi() {
   let listeners = [];
   const current = () => { const id = get("session", null); const u = id && get("users", {})[id]; return u ? { uid: id, email: u.email, name: u.name } : null; };
   const emit = () => listeners.forEach(cb => cb(current()));
+  let pendingRef = null;
   const login = (email, name, pass, create) => {
     const users = get("users", {});
     let id = Object.keys(users).find(k => users[k].email.toLowerCase() === email.toLowerCase());
@@ -122,6 +175,8 @@ function demoApi() {
       if (id) throw { code: "auth/email-already-in-use" };
       id = "u" + Date.now().toString(36);
       users[id] = { email, name: name || "", pass, planUntil: null, branding: {}, createdAt: Date.now(), admin: Object.keys(users).length === 0 };
+      let ref = pendingRef; try { ref = ref || JSON.parse(localStorage.getItem("wave_ref")); } catch (e) {}
+      if (ref && ref !== id && users[ref]) users[id].referredBy = ref;
       set("users", users);
     } else if (!id || (pass !== null && users[id].pass !== pass)) throw { code: "auth/invalid-credential" };
     set("session", id); setTimeout(emit, 0);
@@ -138,7 +193,15 @@ function demoApi() {
     async signUpEmail(e, p, n) { if ((p || "").length < 6) throw { code: "auth/weak-password" }; login(e, n, p, true); },
     async resetPassword() { return wait(); },
     async signOut() { set("session", null); emit(); },
-    async loadProfile(u) { const x = get("users", {})[u.uid]; return wait({ admin: !!x.admin, planUntil: x.planUntil, branding: x.branding || {}, name: x.name }); },
+    async loadProfile(u, ref) { pendingRef = ref; const x = get("users", {})[u.uid]; return wait({ admin: !!x.admin, planUntil: x.planUntil, branding: x.branding || {}, name: x.name, refRewards: x.refRewards || 0, referredBy: x.referredBy || null }); },
+    async listWorksheets(kind) { const me = get("session", null); return wait(Object.entries(get("ws_" + me, {})).map(([id, w]) => ({ id, ...w })).filter(w => w.kind === kind).sort((a, b) => b.updatedAt - a.updatedAt)); },
+    async getWorksheet(id) { const me = get("session", null); const w = get("ws_" + me, {})[id]; return w ? { id, ...w } : null; },
+    async saveWorksheet(id, data) { const me = get("session", null); const all = get("ws_" + me, {}); id = id || "w" + Date.now().toString(36); all[id] = JSON.parse(JSON.stringify(data)); set("ws_" + me, all); return id; },
+    async deleteWorksheet(id) { const me = get("session", null); const all = get("ws_" + me, {}); delete all[id]; set("ws_" + me, all); },
+    async sendFeedback(f) { const l = get("feedback", []); l.unshift({ id: "f" + Date.now(), ...f, createdAt: Date.now() }); set("feedback", l); },
+    async listFeedback() { return wait(get("feedback", [])); },
+    async deleteFeedback(id) { set("feedback", get("feedback", []).filter(f => f.id !== id)); },
+    async rewardReferral(uid, ref, ms) { const us = get("users", {}); if (!us[ref]) return; us[ref].planUntil = Math.max(Date.now(), us[ref].planUntil || 0) + ms; us[ref].refRewards = (us[ref].refRewards || 0) + 1; us[uid].referralRewarded = true; set("users", us); },
     async saveBranding(uid, b) { const us = get("users", {}); us[uid].branding = b; set("users", us); },
     async chapters() { return wait(get("chapters", {})); },
     async questions(cls, subject, chapter) { return wait(get("questions", []).filter(q => q.cls === cls && q.subject === subject && q.chapter === chapter)); },
@@ -156,7 +219,15 @@ function demoApi() {
       return wait(list.length);
     },
     async deleteQuestion(q) { set("questions", get("questions", []).filter(x => x.id !== q.id)); const im = get("images", {}); delete im[q.id]; set("images", im); },
-    async users() { return wait(Object.entries(get("users", {})).map(([uid, x]) => ({ uid, email: x.email, name: x.name, createdAt: x.createdAt, planUntil: x.planUntil, admin: !!x.admin })).sort((a, b) => b.createdAt - a.createdAt)); },
+    async deleteQuestions(only) {
+      const qs = get("questions", []), im = get("images", {}), ch = get("chapters", {});
+      const hit = q => !only || (q.cls === only.cls && q.subject === only.subject && q.chapter === only.chapter);
+      const gone = qs.filter(hit); gone.forEach(q => delete im[q.id]);
+      set("questions", qs.filter(q => !hit(q))); set("images", im);
+      if (only) { const k = key(only.cls, only.subject); ch[k] = (ch[k] || []).filter(c => c !== only.chapter); set("chapters", ch); } else set("chapters", {});
+      return wait(gone.length);
+    },
+    async users() { return wait(Object.entries(get("users", {})).map(([uid, x]) => ({ uid, email: x.email, name: x.name, createdAt: x.createdAt, planUntil: x.planUntil, admin: !!x.admin, referredBy: x.referredBy || null, referralRewarded: !!x.referralRewarded })).sort((a, b) => b.createdAt - a.createdAt)); },
     async setPlan(uid, ms) { const us = get("users", {}); us[uid].planUntil = ms; set("users", us); }
   };
 }
@@ -218,6 +289,19 @@ function localApi() {
       await tx(["questions", "images"], "readwrite", (qs, im) => { qs.delete(q.id); im.delete(q.id); });
       cache = (await all()).filter(x => x.id !== q.id); await touch();
     },
+    async deleteQuestions(only) {
+      const qs = await all();
+      const hit = q => !only || (q.cls === only.cls && q.subject === only.subject && q.chapter === only.chapter);
+      const gone = qs.filter(hit);
+      await tx(["questions", "images"], "readwrite", (s, im) => { gone.forEach(q => { s.delete(q.id); im.delete(q.id); }); });
+      cache = qs.filter(q => !hit(q)); await touch();
+      return gone.length;
+    },
+    async listWorksheets(kind) { const all = (await kvGet("worksheets")) || {}; return Object.entries(all).map(([id, w]) => ({ id, ...w })).filter(w => w.kind === kind).sort((a, b) => b.updatedAt - a.updatedAt); },
+    async getWorksheet(id) { const all = (await kvGet("worksheets")) || {}; return all[id] ? { id, ...all[id] } : null; },
+    async saveWorksheet(id, data) { const all = (await kvGet("worksheets")) || {}; id = id || "w" + Date.now().toString(36); all[id] = JSON.parse(JSON.stringify(data)); await kvSet("worksheets", all); return id; },
+    async deleteWorksheet(id) { const all = (await kvGet("worksheets")) || {}; delete all[id]; await kvSet("worksheets", all); },
+    async sendFeedback() {}, async listFeedback() { return []; }, async deleteFeedback() {}, async rewardReferral() {},
     async users() { return []; },
     async setPlan() {},
     // ---- backup / restore ----

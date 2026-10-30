@@ -109,7 +109,7 @@ function showPending() {
 }
 $("pendCheck").onclick = async () => {
   $("pendCheck").disabled = true;
-  try { profile = await api.loadProfile(user); enter(); } catch (e) { toast("Could not check. Try again."); }
+  try { profile = await api.loadProfile(user, store.get("wave_ref", null)); enter(); } catch (e) { toast("Could not check. Try again."); }
   finally { $("pendCheck").disabled = false; }
 };
 $("pendOut").onclick = () => api.signOut();
@@ -119,27 +119,41 @@ function enter() { if (!isActive()) { showPending(); return; } startApp(); }
 
 async function startApp() {
   settings = { ...DEFAULTS, teacher: profile.name || user.name || "", ...profile.branding };
-  $("brandName").textContent = APP.name;
-  $("whoName").textContent = profile.name || user.name || user.email;
-  $("adminTab").hidden = !profile.admin;
-  if (OFFLINE) {
-    $("adminTab").textContent = "Manage"; $("signOut").hidden = true; $("whoName").hidden = true;
-    $("teachersPanel").hidden = true; $("backupPanel").hidden = false; $("installPanel").hidden = isInstalled();
-  }
-  const pb = $("planBar");
-  if (!profile.admin && profile.planUntil) {
-    const left = Math.ceil((profile.planUntil - Date.now()) / DAY);
-    pb.hidden = false; pb.className = "planbar" + (left <= 7 ? " warn" : "");
-    pb.textContent = left <= 7 ? `Your subscription ends in ${left} day${left === 1 ? "" : "s"} (${fmtDate(profile.planUntil)}). Contact ${APP.contactPhone} to renew.`
-      : `Subscription active till ${fmtDate(profile.planUntil)}`;
-  } else pb.hidden = true;
-  if (OFFLINE) backupReminder();
+  const nm = profile.name || user.name || user.email;
+  const parts = APP.name.match(/^(.*?)\s*(Worksheets?)$/i);
+  $("hdrTitle").textContent = parts ? parts[1] : APP.name;
+  $("hdrSub").textContent = parts ? parts[2] : "";
+  $("drName").textContent = nm;
+  $("drRole").textContent = profile.admin ? "Admin" : "Teacher";
+  $("drPhone").textContent = settings.phone || "";
+  $("drAdmin").hidden = !profile.admin;
+  const ph = APP.contactPhone.replace(/\D/g, "").slice(-10);
+  $("drCall").href = `tel:+91${ph}`;
+  $("drWa").href = `https://wa.me/91${ph}?text=${encodeURIComponent("Hello, I need help with " + APP.name)}`;
+  paintAvatars();
+  $("pfName").textContent = nm; $("pfEmail").textContent = user.email || "";
+  $("pfPlan").textContent = planText();
+  if (OFFLINE) { $("teachersPanel").hidden = true; $("backupPanel").hidden = false; $("installPanel").hidden = isInstalled(); $("signOut").hidden = true; $("signOut2").hidden = true; }
   picked = new Map(store.get("ws_picked_" + user.uid, []).map(q => [q.id, q]));
-  fillSettingsUI(); logoUI(); updateCounts();
-  screen("scrApp"); show("bank");
+  currentDraft = store.get("ws_draft_" + user.uid, null);
+  fillSettingsUI(); logoUI(); updateCounts(false);
+  screen("scrApp");
+  history.replaceState({ v: "home" }, "", location.pathname + "#home");
+  show("home", { push: false });
   try { chapterMap = await api.chapters(); }
   catch (e) { chapterMap = {}; toast("Could not load chapters. Check your internet."); }
-  initFilters();
+  initHome();
+  if (OFFLINE) backupReminder();
+}
+function planText() {
+  if (profile.admin) return "Admin · full access";
+  if (!profile.planUntil) return "No active plan";
+  return `Pro plan · active till ${fmtDate(profile.planUntil)}`;
+}
+function initials(s) { return (s || "?").split(/[\s@._]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join(""); }
+function paintAvatars() {
+  const html = settings.logo ? `<img src="${settings.logo}" alt="">` : esc(initials(profile.name || user.name || user.email));
+  ["hdrAvatar", "drAvatar", "pfAvatar"].forEach(id => { $(id).innerHTML = html; });
 }
 
 // ================= Settings (saved to the account) =================
@@ -149,6 +163,7 @@ function saveSet() {
   saveTimer = setTimeout(async () => {
     try { await api.saveBranding(user.uid, settings); } catch (e) { toast("Could not save your settings. Check your internet."); }
   }, 900);
+  paintAvatars(); $("drPhone").textContent = settings.phone || "";
 }
 const bind = [["sAcademy", "academy"], ["sTeacher", "teacher"], ["sPhone", "phone"], ["sWm", "wm"], ["wClass", "cls"], ["wTopic", "topic"]];
 const checks = [["wGroup", "group"], ["wMarks", "marks"], ["wKey", "key"], ["wWm", "wmOn"]];
@@ -161,49 +176,129 @@ function fillSettingsUI() {
   $("wFont").value = settings.font;
 }
 
-// ================= Question bank (by chapter) =================
-function initFilters() {
-  fillSel($("fClass"), CLASSES.map(c => [String(c), "Class " + roman(c)]));
-  fillSel($("fExam"), ["CBSE", "JEE", "NEET"].map(x => [x, x]), "All");
-  fillSel($("fType"), Object.entries(TYPES), "All");
-  const last = store.get("ws_last", { cls: "10", subject: "Science", chapter: "" });
-  $("fClass").value = last.cls || "10";
-  subjectsUI(last.subject); chaptersUI(last.chapter);
+// ================= Navigation =================
+const VIEWS = ["home", "chapters", "bank", "ws", "saved", "drafts", "set", "refer", "feedback", "help", "admin"];
+let curView = "home";
+const nav = { cls: 10, subject: "", chapter: "" };
+function show(v, { push = true } = {}) {
+  if (!VIEWS.includes(v) || (v === "admin" && !profile.admin)) v = "home";
+  if ((v === "chapters" && !nav.subject) || (v === "bank" && !nav.chapter)) v = "home";
+  VIEWS.forEach(x => { $("v-" + x).hidden = x !== v; });
+  curView = v; closeDrawer();
+  $("bbHome").classList.toggle("on", ["home", "chapters", "bank"].includes(v));
+  $("bbProfile").classList.toggle("on", v === "set");
+  $("goWs").classList.toggle("on", v === "ws");
+  document.querySelectorAll(".dr-list [data-go]").forEach(b => b.classList.toggle("on", b.dataset.go === v));
+  if (push) history.pushState({ v }, "", "#" + v);
+  if (v === "home") renderHome();
+  if (v === "chapters") renderChapters();
+  if (v === "ws") { renderPreview(); $("draftNote").hidden = !currentDraft; if (currentDraft) $("draftNote").textContent = `Editing draft: ${currentDraft.name}`; }
+  if (v === "saved") renderWorksheets("saved");
+  if (v === "drafts") renderWorksheets("draft");
+  if (v === "refer") renderRefer();
+  if (v === "admin") { if (OFFLINE) renderBackup(); else { loadUsers(); loadFeedback(); } }
+  scrollTo(0, 0);
 }
-function subjectsUI(pref) {
-  const cls = $("fClass").value;
-  const extra = Object.keys(chapterMap).filter(k => k.startsWith(cls + "|")).map(k => k.split("|")[1]).filter(s => !SUBJECTS.includes(s));
-  const list = [...SUBJECTS, ...extra];
-  const has = s => (chapterMap[cls + "|" + s] || []).length > 0;
-  fillSel($("fSubject"), list.map(s => [s, s + (has(s) ? "" : " (no questions yet)")]));
-  $("fSubject").value = list.includes(pref) && has(pref) ? pref : (list.find(has) || pref || list[0]);
-}
-function chaptersUI(pref) {
-  const chs = [...(chapterMap[$("fClass").value + "|" + $("fSubject").value] || [])].sort((a, b) => a.localeCompare(b));
-  if (!chs.length) fillSel($("fChapter"), [["", "No chapters yet"]]);
-  else { fillSel($("fChapter"), chs.map(c => [c, c])); $("fChapter").value = chs.includes(pref) ? pref : chs[0]; }
-  loadQuestions();
-}
-function goTo(cls, subject, chapter) { $("fClass").value = String(cls); subjectsUI(subject); chaptersUI(chapter); }
-$("fClass").onchange = () => { subjectsUI($("fSubject").value); chaptersUI(""); };
-$("fSubject").onchange = () => chaptersUI("");
-$("fChapter").onchange = () => loadQuestions();
-["fExam", "fType"].forEach(id => $(id).onchange = renderList);
-$("fSearch").addEventListener("input", renderList);
+addEventListener("popstate", e => {
+  if ($("drawer").classList.contains("open")) { closeDrawer(); history.pushState({ v: curView }, "", "#" + curView); return; }
+  const m = [...document.querySelectorAll(".modal")].find(x => !x.hidden);
+  if (m) { m.hidden = true; history.pushState({ v: curView }, "", "#" + curView); return; }
+  if (!$("scrApp").hidden) show((e.state && e.state.v) || "home", { push: false });
+});
+document.addEventListener("click", e => {
+  const g = e.target.closest("[data-go]"); if (g && !$("scrApp").hidden) { e.preventDefault(); show(g.dataset.go); return; }
+  if (e.target.closest("[data-back]")) { e.preventDefault(); history.back(); }
+});
+function openDrawer() { $("drawer").classList.add("open"); $("drawer").setAttribute("aria-hidden", "false"); $("scrim").hidden = false; }
+function closeDrawer() { $("drawer").classList.remove("open"); $("drawer").setAttribute("aria-hidden", "true"); $("scrim").hidden = true; }
+$("menuBtn").onclick = openDrawer;
+$("scrim").onclick = closeDrawer;
+$("hdrAvatar").onclick = () => show("set");
+$("signOut2").onclick = () => api.signOut();
 
+// ================= Home: exam, class, subjects =================
+const SUBJECT_ICONS = {
+  Maths: { bg: "#e7f0ff", svg: '<rect x="10" y="10" width="28" height="28" rx="6" fill="#2f6fde"/><path d="M17 20h14M24 13v14" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M17 33h14" stroke="#ffd36b" stroke-width="3" stroke-linecap="round"/><circle cx="36" cy="36" r="7" fill="#f4ae22"/><path d="M33 36h6" stroke="#0e2a47" stroke-width="2.4" stroke-linecap="round"/>' },
+  Physics: { bg: "#e5f6f8", svg: '<circle cx="24" cy="24" r="4.5" fill="#0f8fa1"/><g fill="none" stroke="#0e2a47" stroke-width="2.4"><ellipse cx="24" cy="24" rx="17" ry="6.5"/><ellipse cx="24" cy="24" rx="17" ry="6.5" transform="rotate(60 24 24)"/><ellipse cx="24" cy="24" rx="17" ry="6.5" transform="rotate(-60 24 24)"/></g><circle cx="41" cy="24" r="2.6" fill="#f4ae22"/>' },
+  Chemistry: { bg: "#f0ebff", svg: '<path d="M19 8h10M21 8v11L11 36a3 3 0 0 0 2.6 4.5h20.8A3 3 0 0 0 37 36L27 19V8" fill="#fff" stroke="#5b3fc4" stroke-width="2.4" stroke-linejoin="round"/><path d="M14.5 31h19L37 36a3 3 0 0 1-2.6 4.5H13.6A3 3 0 0 1 11 36z" fill="#8f6cf0"/><circle cx="21" cy="35" r="2" fill="#fff"/><circle cx="27" cy="33" r="1.4" fill="#fff"/>' },
+  Biology: { bg: "#e6f6ec", svg: '<path d="M16 8c0 10 16 12 16 24 0 4-2 7-4 8M32 8c0 10-16 12-16 24 0 4 2 7 4 8" fill="none" stroke="#1d8657" stroke-width="2.6" stroke-linecap="round"/><path d="M18 14h12M17.5 20h13M18 28h12M19.5 34h9" stroke="#f4ae22" stroke-width="2.4" stroke-linecap="round"/>' },
+  Science: { bg: "#fff3d4", svg: '<circle cx="24" cy="20" r="11" fill="#ffd36b" stroke="#b26500" stroke-width="2"/><path d="M19 34h10M20 38h8" stroke="#0e2a47" stroke-width="2.6" stroke-linecap="round"/><path d="M20 30v-4c-2-1-4-4-4-6M28 30v-4c2-1 4-4 4-6" fill="none" stroke="#b26500" stroke-width="2"/><path d="M24 4v3M38 8l-2 2M10 8l2 2M42 20h-3M6 20h3" stroke="#f4ae22" stroke-width="2.2" stroke-linecap="round"/>' },
+  _: { bg: "#eef2f6", svg: '<path d="M10 10h12a4 4 0 0 1 4 4v24a3 3 0 0 0-3-3H10zM38 10H26a4 4 0 0 0-4 4v24a3 3 0 0 1 3-3h13z" fill="#fff" stroke="#0e2a47" stroke-width="2.2" stroke-linejoin="round"/>' }
+};
+function initHome() {
+  fillSel($("fExam"), [["", "All exams"], ["CBSE", "CBSE"], ["JEE", "JEE"], ["NEET", "NEET"]]);
+  fillSel($("fClass"), CLASSES.map(c => [String(c), "Class " + roman(c)]));
+  fillSel($("fType"), Object.entries(TYPES), "All types");
+  const last = store.get("ws_last", { cls: "10", exam: "" });
+  $("fClass").value = last.cls || "10"; $("fExam").value = last.exam || "";
+  nav.cls = +$("fClass").value;
+  renderHome();
+}
+$("fClass").onchange = () => { nav.cls = +$("fClass").value; nav.subject = ""; nav.chapter = ""; saveLast(); renderSubjects(true); };
+$("fExam").onchange = () => { saveLast(); if (curView === "bank") renderList(); };
+function saveLast() { store.set("ws_last", { cls: $("fClass").value, exam: $("fExam").value }); }
+function subjectsFor(cls) {
+  const extra = Object.keys(chapterMap).filter(k => k.startsWith(cls + "|")).map(k => k.split("|")[1]).filter(s => !SUBJECTS.includes(s));
+  return [...SUBJECTS, ...extra].map(s => ({ name: s, n: (chapterMap[cls + "|" + s] || []).length }));
+}
+function renderHome() { renderPro(); renderSubjects(false); }
+function renderPro() {
+  const b = $("proBanner"); let title, sub, warn = false;
+  if (profile.admin) { title = "Admin access"; sub = "Manage questions, teachers and feedback"; }
+  else {
+    const left = Math.ceil((profile.planUntil - Date.now()) / DAY);
+    warn = left <= 7;
+    title = warn ? `Plan ends in ${left} day${left === 1 ? "" : "s"}` : "Pro version active";
+    sub = warn ? `Ends ${fmtDate(profile.planUntil)} · tap to renew on WhatsApp` : `Active till ${fmtDate(profile.planUntil)}`;
+  }
+  b.className = "pro" + (warn ? " warn" : "");
+  b.innerHTML = `<span class="pro-txt"><b>${esc(title)}</b><span>${esc(sub)}</span></span><span class="crown"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M4 17l-1-9 5 4 4-7 4 7 5-4-1 9z" fill="#fff" stroke="#b26500" stroke-width="1.4" stroke-linejoin="round"/><rect x="5" y="18" width="14" height="2.4" rx="1" fill="#fff"/></svg></span>`;
+  b.onclick = () => { if (profile.admin) show("admin"); else if (warn) window.open($("drWa").href, "_blank"); else show("set"); };
+}
+function renderSubjects() {
+  const list = subjectsFor(nav.cls);
+  $("subjGrid").innerHTML = list.map(s => {
+    const ic = SUBJECT_ICONS[s.name] || SUBJECT_ICONS._;
+    return `<button class="subj${s.n ? "" : " empty"}" data-subj="${esc(s.name)}"><span class="disc" style="background:${ic.bg}"><svg class="sv" viewBox="0 0 48 48" aria-hidden="true">${ic.svg}</svg></span>${esc(s.name)}<small>${s.n ? s.n + " chapter" + (s.n === 1 ? "" : "s") : "Coming soon"}</small></button>`;
+  }).join("");
+}
+$("subjGrid").addEventListener("click", e => {
+  const b = e.target.closest("[data-subj]"); if (!b) return;
+  const n = (chapterMap[nav.cls + "|" + b.dataset.subj] || []).length;
+  if (!n) { toast(profile.admin ? "No chapters yet. Add questions from Admin." : "Questions for this subject are coming soon."); return; }
+  nav.subject = b.dataset.subj; nav.chapter = ""; show("chapters");
+});
+
+// ================= Chapters =================
+function renderChapters() {
+  $("chTitle").textContent = nav.subject; $("chSub").textContent = `Class ${roman(nav.cls)} · choose a chapter`;
+  const chs = [...(chapterMap[nav.cls + "|" + nav.subject] || [])].sort((a, b) => a.localeCompare(b));
+  const ticked = ch => [...picked.values()].filter(q => q.cls === nav.cls && q.subject === nav.subject && q.chapter === ch).length;
+  $("chList").innerHTML = chs.length ? chs.map((c, i) => { const t = ticked(c);
+    return `<button class="chap" data-ch="${esc(c)}"><span class="num">${i + 1}</span><span class="nm">${esc(c)}</span>${t ? `<span class="tk">${t} ticked</span>` : ""}<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>`; }).join("")
+    : `<div class="empty">No chapters yet.</div>`;
+}
+$("chList").addEventListener("click", e => {
+  const b = e.target.closest("[data-ch]"); if (!b) return;
+  nav.chapter = b.dataset.ch; $("fType").value = ""; $("fSearch").value = "";
+  show("bank"); loadQuestions();
+});
+
+// ================= Questions of one chapter =================
+["fType"].forEach(id => $(id).onchange = renderList);
+$("fSearch").addEventListener("input", renderList);
 async function loadQuestions() {
-  const cls = +$("fClass").value, subject = $("fSubject").value, chapter = $("fChapter").value;
-  store.set("ws_last", { cls: String(cls), subject, chapter });
+  const { cls, subject, chapter } = nav;
+  $("qTitle").textContent = chapter; $("qSub").textContent = `Class ${roman(cls)} · ${subject}`;
   const token = ++loadToken;
-  if (!chapter) { current = []; renderList(); return; }
-  $("qlist").innerHTML = `<div class="loadingrow">Loading questions…</div>`;
+  current = [];
+  $("qlist").innerHTML = `<div class="loadingrow">Loading questions…</div>`; $("shownInfo").textContent = "";
   try {
     const qs = await api.questions(cls, subject, chapter);
     if (token !== loadToken) return;
     current = qs.sort((a, b) => (a.seq || 0) - (b.seq || 0));
   } catch (e) {
     if (token !== loadToken) return;
-    current = [];
     $("qlist").innerHTML = `<div class="empty">Could not load questions. Check your internet and try again.</div>`;
     return;
   }
@@ -215,13 +310,9 @@ function shown() {
     (!w || ((q.text || "") + " " + (q.case || "") + " " + (q.reason || "")).toLowerCase().includes(w)));
 }
 function renderList() {
+  if (!nav.chapter) return;
   const list = shown();
-  const chapter = $("fChapter").value;
-  $("shownInfo").textContent = chapter ? `${list.length} of ${current.length} questions in ${chapter}` : "";
-  if (!chapter) {
-    $("qlist").innerHTML = `<div class="empty">No questions for this class and subject yet.${profile.admin ? " Add them from the Admin tab." : " Choose another subject."}</div>`;
-    updateCounts(); return;
-  }
+  $("shownInfo").textContent = `${list.length} of ${current.length} questions`;
   $("qlist").innerHTML = list.length ? list.map(q => `<label class="q ${picked.has(q.id) ? "on" : ""}" data-id="${esc(q.id)}">
     <input type="checkbox" ${picked.has(q.id) ? "checked" : ""} aria-label="Use this question">
     <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span><span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}</div>
@@ -229,8 +320,7 @@ function renderList() {
     ${q.type === "AR" ? `<div class="opts">R: ${esc(q.reason)}</div>` : ""}
     ${q.type === "MCQ" ? `<div class="opts">${(q.opts || []).map((o, i) => "abcd"[i] + ") " + esc(o)).join(" &nbsp; ")}</div>` : ""}
     ${profile.admin ? `<button class="btn qdel" type="button" data-del="${esc(q.id)}">Delete</button>` : ""}</div></label>`).join("")
-    : `<div class="empty">No questions match these filters.</div>`;
-  updateCounts();
+    : `<div class="empty">${current.length ? "No questions match this filter." : "No questions in this chapter yet."}</div>`;
 }
 $("qlist").addEventListener("click", async e => {
   const del = e.target.closest("[data-del]");
@@ -239,14 +329,14 @@ $("qlist").addEventListener("click", async e => {
   if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Tap again to delete"; setTimeout(() => { if (del.isConnected) { del.dataset.armed = ""; del.textContent = "Delete"; } }, 4000); return; }
   const q = current.find(x => x.id === del.dataset.del); if (!q) return;
   del.disabled = true; del.textContent = "Deleting…";
-  try { await api.deleteQuestion(q); current = current.filter(x => x.id !== q.id); picked.delete(q.id); savePicked(); renderList(); toast("Question deleted"); }
+  try { await api.deleteQuestion(q); current = current.filter(x => x.id !== q.id); picked.delete(q.id); savePicked(); renderList(); updateCounts(); toast("Question deleted"); }
   catch (err) { del.disabled = false; del.textContent = "Delete"; toast("Could not delete. Try again."); }
 });
 $("qlist").addEventListener("change", e => {
   const lab = e.target.closest(".q"); if (!lab) return;
   const q = current.find(x => x.id === lab.dataset.id); if (!q) return;
   if (e.target.checked) pick(q); else picked.delete(q.id);
-  lab.classList.toggle("on", e.target.checked); savePicked(); updateCounts();
+  lab.classList.toggle("on", e.target.checked); savePicked(); updateCounts(true);
 });
 function pick(q) {
   const { img, ...rest } = q; picked.set(q.id, rest);
@@ -254,20 +344,17 @@ function pick(q) {
   if (!settings.cls) { settings.cls = `Class ${roman(q.cls)} _ ${q.subject}`; $("wClass").value = settings.cls; saveSet(); }
 }
 function savePicked() { store.set("ws_picked_" + user.uid, [...picked.values()]); }
-function updateCounts() {
-  const n = picked.size;
-  $("tabCount").textContent = n;
-  $("selInfo").textContent = `${n} question${n === 1 ? "" : "s"} ticked`;
+function updateCounts(animate) {
+  const n = picked.size, b = $("tabCount");
+  b.textContent = n; b.classList.toggle("zero", !n);
+  if (animate) { b.classList.remove("bump"); void b.offsetWidth; b.classList.add("bump"); }
+  $("selInfo").textContent = `${n} question${n === 1 ? "" : "s"}`;
   $("dlPdf").disabled = !n;
 }
-$("selAll").onclick = () => { shown().forEach(pick); savePicked(); renderList(); };
-$("selNone").onclick = () => {
-  const b = $("selNone");
-  if (b.dataset.armed !== "1" && picked.size > 5) { b.dataset.armed = "1"; b.textContent = `Tap again to clear ${picked.size}`; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Clear all ticks"; }, 4000); return; }
-  b.dataset.armed = ""; b.textContent = "Clear all ticks"; picked.clear(); savePicked(); renderList();
-};
+$("selAll").onclick = () => { shown().forEach(pick); savePicked(); renderList(); updateCounts(true); };
+$("selNone").onclick = () => { shown().forEach(q => picked.delete(q.id)); savePicked(); renderList(); updateCounts(true); };
 
-// Save questions to the online bank, then jump to their chapter
+// Save questions to the online bank, then refresh chapters
 async function saveToBank(list) {
   const base = Date.now() * 1000;
   const withSeq = list.map((q, i) => ({ ...q, seq: base + i }));
@@ -275,7 +362,9 @@ async function saveToBank(list) {
   if (OFFLINE) backupReminder();
   chapterMap = await api.chapters();
   const f = withSeq[0];
-  if (f) goTo(f.cls, f.subject, f.chapter);
+  if (f) { nav.cls = f.cls; $("fClass").value = String(f.cls); saveLast(); }
+  renderHome();
+  if (f && curView === "bank" && nav.subject === f.subject && nav.chapter === f.chapter) loadQuestions();
   return withSeq.length;
 }
 async function loadPickedImages() {
@@ -284,6 +373,123 @@ async function loadPickedImages() {
   try { Object.assign(imgCache, await api.images(need)); } catch (e) { toast("Some diagrams could not be loaded."); }
 }
 
+// ================= My Worksheets & Drafts =================
+let currentDraft = null;           // {id, name} while editing a draft
+let lastSavedSig = "";
+const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "font"];
+function snapshot(kind, name) {
+  const qs = JSON.parse(JSON.stringify([...picked.values()]));
+  return { kind, name, count: qs.length, questions: qs, ws: Object.fromEntries(WS_KEYS.map(k => [k, settings[k]])), updatedAt: Date.now() };
+}
+async function autoSaveWorksheet() {
+  const sig = [...picked.keys()].join(",") + "|" + settings.topic + "|" + settings.cls;
+  if (sig === lastSavedSig) return;
+  try { await api.saveWorksheet(null, snapshot("saved", settings.topic || "Worksheet")); lastSavedSig = sig; } catch (e) { /* history is a convenience */ }
+}
+$("draftBtn").onclick = () => {
+  if (!picked.size) { toast("Tick some questions first"); return; }
+  $("dmName").value = currentDraft ? currentDraft.name : (settings.topic || "Draft") + " · " + fmtDate(Date.now());
+  $("dmMsg").textContent = ""; $("draftModal").hidden = false; $("dmName").focus();
+};
+$("dmX").onclick = $("dmCancel").onclick = () => { $("draftModal").hidden = true; };
+$("dmSave").onclick = async () => {
+  const name = $("dmName").value.trim() || "Draft"; const b = $("dmSave"); b.disabled = true; $("dmMsg").textContent = "Saving…";
+  try {
+    const id = await api.saveWorksheet(currentDraft ? currentDraft.id : null, snapshot("draft", name));
+    currentDraft = { id, name }; store.set("ws_draft_" + user.uid, currentDraft);
+    $("draftModal").hidden = true; $("draftNote").hidden = false; $("draftNote").textContent = `Editing draft: ${name}`; toast("Draft saved");
+  } catch (e) { $("dmMsg").textContent = "Could not save. Check your internet and try again."; }
+  finally { b.disabled = false; }
+};
+$("wsClear").onclick = () => {
+  const b = $("wsClear");
+  if (picked.size && b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Tap again to clear"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Start new"; }, 4000); return; }
+  b.dataset.armed = ""; b.textContent = "Start new";
+  picked.clear(); savePicked(); currentDraft = null; store.set("ws_draft_" + user.uid, null);
+  settings.topic = ""; settings.cls = ""; $("wTopic").value = ""; $("wClass").value = ""; saveSet();
+  updateCounts(true); renderPreview(); $("draftNote").hidden = true; toast("Started a new worksheet");
+};
+let wsCache = [];
+async function renderWorksheets(kind) {
+  const box = $(kind === "draft" ? "draftList" : "savedList");
+  box.innerHTML = `<div class="loadingrow">Loading…</div>`;
+  try { wsCache = await api.listWorksheets(kind); }
+  catch (e) { box.innerHTML = `<div class="empty">Could not load. Check your internet.</div>`; return; }
+  box.innerHTML = wsCache.length ? wsCache.map(w => `<div class="wrow"><div class="wt"><span class="wico${kind === "draft" ? " d" : ""}"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${kind === "draft" ? '<path d="M4 20h4L19 9l-4-4L4 16z"/>' : '<path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/>'}</svg></span>
+    <div class="wm"><b>${esc(w.name)}</b><span>${w.count} question${w.count === 1 ? "" : "s"} · ${fmtDate(w.updatedAt)}${w.ws && w.ws.cls ? " · " + esc(w.ws.cls) : ""}</span></div></div>
+    <div class="wa"><button class="btn primary" data-wopen="${esc(w.id)}">${kind === "draft" ? "Continue" : "Open"}</button>${kind === "draft" ? "" : `<button class="btn" data-wpdf="${esc(w.id)}">Download PDF</button>`}<button class="btn del" data-wdel="${esc(w.id)}">Delete</button></div></div>`).join("")
+    : `<div class="empty">${kind === "draft" ? "No drafts yet. On the worksheet screen, tap “Save as draft”." : "No worksheets yet. Every PDF you download will appear here."}</div>`;
+}
+async function openWorksheet(id, thenPdf) {
+  const w = await api.getWorksheet(id); if (!w) { toast("That worksheet was not found"); return; }
+  picked = new Map((w.questions || []).map(q => [q.id, q])); savePicked();
+  Object.assign(settings, w.ws || {}); fillSettingsUI(); saveSet();
+  currentDraft = w.kind === "draft" ? { id: w.id, name: w.name } : null; store.set("ws_draft_" + user.uid, currentDraft);
+  lastSavedSig = w.kind === "saved" ? [...picked.keys()].join(",") + "|" + settings.topic + "|" + settings.cls : "";
+  updateCounts(true); show("ws");
+  if (thenPdf) $("dlPdf").click();
+}
+["savedList", "draftList"].forEach(id => $(id).addEventListener("click", async e => {
+  const o = e.target.closest("[data-wopen]"), p = e.target.closest("[data-wpdf]"), d = e.target.closest("[data-wdel]");
+  try {
+    if (o) await openWorksheet(o.dataset.wopen, false);
+    else if (p) await openWorksheet(p.dataset.wpdf, true);
+    else if (d) {
+      if (d.dataset.armed !== "1") { d.dataset.armed = "1"; d.textContent = "Tap again"; setTimeout(() => { if (d.isConnected) { d.dataset.armed = ""; d.textContent = "Delete"; } }, 4000); return; }
+      await api.deleteWorksheet(d.dataset.wdel);
+      if (currentDraft && currentDraft.id === d.dataset.wdel) { currentDraft = null; store.set("ws_draft_" + user.uid, null); }
+      renderWorksheets(id === "draftList" ? "draft" : "saved"); toast("Deleted");
+    }
+  } catch (err) { toast("Could not do that. Check your internet."); }
+}));
+
+// ================= Refer & Earn =================
+function referLink() { return location.origin + location.pathname + "?ref=" + encodeURIComponent(user.uid); }
+function renderRefer() {
+  const link = referLink();
+  $("refLink").value = link;
+  $("refWa").href = "https://wa.me/?text=" + encodeURIComponent(`I make my worksheets with ${APP.name}. Pick questions, get a ready PDF in a minute. Join with my link: ${link}`);
+  const n = profile.refRewards || 0;
+  $("refEarned").textContent = n ? `You have earned ${n} free month${n === 1 ? "" : "s"} so far. Thank you!` : "Your free months will show here.";
+}
+$("refCopy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("refLink").value); toast("Link copied"); }
+  catch (e) { $("refLink").select(); toast("Press and hold to copy the link"); }
+};
+
+// ================= Feedback =================
+let fbRating = 0;
+$("fbStars").addEventListener("click", e => {
+  const b = e.target.closest("[data-r]"); if (!b) return;
+  fbRating = +b.dataset.r;
+  [...$("fbStars").children].forEach(x => x.classList.toggle("on", +x.dataset.r <= fbRating));
+});
+$("fbSend").onclick = async () => {
+  const text = $("fbText").value.trim();
+  if (!text && !fbRating) { $("fbMsg").textContent = "Choose stars or write a message first."; return; }
+  $("fbSend").disabled = true; $("fbMsg").textContent = "Sending…";
+  try {
+    await api.sendFeedback({ rating: fbRating, text, name: profile.name || user.name || "", email: user.email || "" });
+    $("fbText").value = ""; fbRating = 0; [...$("fbStars").children].forEach(x => x.classList.remove("on"));
+    $("fbMsg").textContent = "Thank you! Your feedback was sent."; toast("Feedback sent");
+  } catch (e) { $("fbMsg").textContent = "Could not send. Check your internet and try again."; }
+  finally { $("fbSend").disabled = false; }
+};
+async function loadFeedback() {
+  $("fbList").innerHTML = `<div class="loadingrow">Loading…</div>`;
+  try {
+    const list = await api.listFeedback();
+    $("fbList").innerHTML = list.length ? list.map(f => `<div class="fbitem">${f.rating ? `<span class="st">${"★".repeat(f.rating)}${"☆".repeat(5 - f.rating)}</span>` : ""}${f.text ? `<p>${esc(f.text)}</p>` : ""}
+      <div class="meta"><span>${esc(f.name || "")} · ${esc(f.email || "")}${f.createdAt ? " · " + fmtDate(f.createdAt) : ""}</span><button class="btn" data-fbdel="${esc(f.id)}">Delete</button></div></div>`).join("")
+      : `<div class="empty">No feedback yet.</div>`;
+  } catch (e) { $("fbList").innerHTML = `<div class="empty">Could not load feedback. Make sure the new security rules are published.</div>`; }
+}
+$("fbReload").onclick = loadFeedback;
+$("fbList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-fbdel]"); if (!b) return;
+  try { await api.deleteFeedback(b.dataset.fbdel); b.closest(".fbitem").remove(); } catch (err) { toast("Could not delete."); }
+});
+
 // ================= Add one question (admin) =================
 // ---- add question
 fillSel($("aType"),Object.entries(TYPES));
@@ -291,7 +497,7 @@ function addTypeUI(){const t=$("aType").value;$("aOpts").hidden=t!=="MCQ";$("aRe
   $("aTextLabel").textContent=t==="AR"?"Assertion (A)":t==="CS"?"Questions on the passage (one per line)":"Question";
   $("aMarks").value={MCQ:1,AR:1,SA:2,LA:5,CS:4}[t];}
 $("aType").onchange=addTypeUI;
-$("addOpen").onclick=()=>{$("addModal").hidden=false;$("aClass").value=$("fClass").value||"10";$("aSubject").value=SUBJECTS.includes($("fSubject").value)?$("fSubject").value:"Science";if(!$("aChapter").value)$("aChapter").value=$("fChapter").value||"";$("aErr").textContent="";addTypeUI();$("aText").focus()};
+$("addOpen").onclick=()=>{$("addModal").hidden=false;$("aClass").value=String(nav.cls||10);$("aSubject").value=SUBJECTS.includes(nav.subject)?nav.subject:"Science";if(!$("aChapter").value)$("aChapter").value=nav.chapter||"";$("aErr").textContent="";addTypeUI();$("aText").focus()};
 $("addCancel").onclick=$("addX").onclick=()=>{$("addModal").hidden=true};
 $("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")$("addModal").hidden=true});
 
@@ -756,18 +962,6 @@ async function renderPreview(){
 addEventListener("resize",()=>{if(!$("v-ws").hidden)schedule()});
 
 
-// ================= Tabs =================
-function show(tab) {
-  if (tab === "admin" && !profile.admin) tab = "bank";
-  ["bank", "ws", "set", "admin"].forEach(t => { $("v-" + t).hidden = t !== tab; });
-  document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === tab));
-  document.querySelector(".stickybar").hidden = tab === "admin";
-  if (tab === "ws") renderPreview();
-  if (tab === "admin") { if (OFFLINE) renderBackup(); else loadUsers(); }
-  scrollTo(0, 0);
-}
-document.querySelectorAll(".tab").forEach(b => b.onclick = () => show(b.dataset.tab));
-$("goWs").onclick = () => show("ws");
 $("wsHintGo").onclick = () => show("set");
 
 // ================= Admin: teachers & subscriptions =================
@@ -784,7 +978,9 @@ function renderUsers() {
     const on = u.planUntil && u.planUntil > now;
     const status = u.admin ? `<span class="pill adm">Admin</span>` : on ? `<span class="pill on">Active till ${fmtDate(u.planUntil)}</span>`
       : u.planUntil ? `<span class="pill off">Expired ${fmtDate(u.planUntil)}</span>` : `<span class="pill off">Waiting for activation</span>`;
-    return `<div class="urow"><div class="uinfo"><b>${esc(u.name || "No name")}</b> · ${esc(u.email)}<br><span class="note">${status}${u.createdAt ? " · Joined " + fmtDate(u.createdAt) : ""}</span></div>
+    const refBy = u.referredBy ? usersCache.find(x => x.uid === u.referredBy) : null;
+    const refTxt = refBy ? ` · Referred by ${esc(refBy.name || refBy.email)}${u.referralRewarded ? " (rewarded)" : ""}` : "";
+    return `<div class="urow"><div class="uinfo"><b>${esc(u.name || "No name")}</b> · ${esc(u.email)}<br><span class="note">${status}${u.createdAt ? " · Joined " + fmtDate(u.createdAt) : ""}${refTxt}</span></div>
       ${u.admin ? "" : `<div class="uacts"><button class="btn" data-uid="${esc(u.uid)}" data-act="m1">+1 month</button><button class="btn" data-uid="${esc(u.uid)}" data-act="y1">+1 year</button>${on ? `<button class="btn" data-uid="${esc(u.uid)}" data-act="stop">Stop</button>` : ""}</div>`}</div>`;
   }).join("") : `<div class="empty">No teachers found.</div>`;
 }
@@ -796,9 +992,49 @@ $("uList").addEventListener("click", async e => {
   const from = Math.max(Date.now(), u.planUntil || 0);
   const until = b.dataset.act === "m1" ? from + 30 * DAY : b.dataset.act === "y1" ? from + 365 * DAY : null;
   b.disabled = true;
-  try { await api.setPlan(u.uid, until); u.planUntil = until; renderUsers(); toast(until ? `${u.name || u.email} active till ${fmtDate(until)}` : "Subscription stopped"); }
+  try {
+    await api.setPlan(u.uid, until); u.planUntil = until;
+    let extra = "";
+    if (until && u.referredBy && !u.referralRewarded && usersCache.some(x => x.uid === u.referredBy)) {
+      try { await api.rewardReferral(u.uid, u.referredBy, 30 * DAY); u.referralRewarded = true; const r = usersCache.find(x => x.uid === u.referredBy); if (r) { r.planUntil = Math.max(Date.now(), r.planUntil || 0) + 30 * DAY; extra = ` · ${r.name || r.email} got +1 month for the referral`; } }
+      catch (e) { extra = " · referral reward could not be added"; }
+    }
+    renderUsers(); toast((until ? `${u.name || u.email} active till ${fmtDate(until)}` : "Subscription stopped") + extra, 5000);
+  }
   catch (err) { b.disabled = false; toast("Could not update. Try again."); }
 });
+
+// ================= Admin: delete questions =================
+let delTarget = null;   // null = all, or {cls, subject, chapter}
+function openDelete(target) {
+  delTarget = target;
+  $("delText").textContent = target
+    ? `Delete all ${current.length} questions in Class ${roman(target.cls)} · ${target.subject} · ${target.chapter}?`
+    : "Delete EVERY question in the bank, in all classes and subjects?";
+  $("delType").value = ""; $("delGo").disabled = true; $("delMsg").textContent = "";
+  $("delBox").hidden = false; $("delType").focus();
+}
+$("delChapterBtn").onclick = () => {
+  if (!nav.chapter) { $("delMsg").textContent = "First open the chapter from Home (subject, then chapter), then come back here."; return; }
+  if (!current.length) { $("delMsg").textContent = "That chapter's questions are not loaded. Open the chapter again, then come back here."; return; }
+  openDelete({ cls: nav.cls, subject: nav.subject, chapter: nav.chapter });
+};
+$("delAllBtn").onclick = () => openDelete(null);
+$("delCancel").onclick = () => { $("delBox").hidden = true; delTarget = null; };
+$("delType").addEventListener("input", () => { $("delGo").disabled = $("delType").value.trim().toUpperCase() !== "DELETE"; });
+$("delGo").onclick = async () => {
+  const t = delTarget, b = $("delGo"); b.disabled = true; $("delCancel").disabled = true;
+  $("delMsg").textContent = "Deleting…";
+  try {
+    const n = await api.deleteQuestions(t, done => { $("delMsg").textContent = `Deleting… ${done} done`; });
+    for (const [id, q] of [...picked]) if (!t || (q.cls === t.cls && q.subject === t.subject && q.chapter === t.chapter)) picked.delete(id);
+    savePicked(); updateCounts(true);
+    chapterMap = await api.chapters(); if (t) { nav.chapter = ""; current = []; } else { nav.subject = ""; nav.chapter = ""; current = []; } renderHome();
+    $("delBox").hidden = true;
+    $("delMsg").textContent = `${n} question${n === 1 ? "" : "s"} deleted.`; toast(`${n} questions deleted`);
+  } catch (e) { $("delMsg").textContent = "Could not delete. Check your internet and try again."; b.disabled = false; }
+  finally { $("delCancel").disabled = false; }
+};
 
 // ================= Admin: sample questions =================
 $("seedBtn").onclick = async () => {
@@ -827,12 +1063,13 @@ async function makePdf() {
 async function withBusy(btn, label, fn) {
   btn.disabled = true; const old = btn.textContent; btn.textContent = label;
   try { await fn(); } catch (e) { if (e && e.name !== "AbortError") toast("Could not make the PDF. Try again."); }
-  finally { btn.textContent = old; btn.disabled = false; updateCounts(); }
+  finally { btn.textContent = old; btn.disabled = false; updateCounts(false); }
 }
 $("dlPdf").onclick = () => withBusy($("dlPdf"), "Making PDF…", async () => {
   const r = await makePdf(); if (!r) return;
   if (BRIDGE) BRIDGE.saveFile(await blobToB64(r.blob), r.name, "application/pdf");
   else { r.pdf.save(r.name); toast("PDF saved to Downloads"); }
+  autoSaveWorksheet();
 });
 const canShareFiles = !!BRIDGE || (() => { try { return !!(navigator.canShare && navigator.canShare({ files: [new File(["x"], "t.pdf", { type: "application/pdf" })] })); } catch (e) { return false; } })();
 $("sharePdf").hidden = !canShareFiles;
@@ -840,6 +1077,7 @@ $("sharePdf").onclick = () => withBusy($("sharePdf"), "Making…", async () => {
   const r = await makePdf(); if (!r) return;
   if (BRIDGE) BRIDGE.shareFile(await blobToB64(r.blob), r.name, "application/pdf");
   else await navigator.share({ files: [new File([r.blob], r.name, { type: "application/pdf" })], title: r.name });
+  autoSaveWorksheet();
 });
 
 // ================= Offline extras: backup, install, storage =================
@@ -890,7 +1128,7 @@ $("bkIn").addEventListener("change", async e => {
     const n = await api.importAll(JSON.parse(await f.text()));
     profile = await api.loadProfile(user);
     settings = { ...DEFAULTS, ...profile.branding }; fillSettingsUI(); logoUI();
-    chapterMap = await api.chapters(); initFilters();
+    chapterMap = await api.chapters(); renderHome();
     $("bkMsg").textContent = `Restored ${n} questions.`; renderBackup(); toast("Backup restored");
   } catch (err) { $("bkMsg").textContent = err instanceof SyntaxError ? "That file is not a backup file." : (err.message || "Could not restore."); }
 });
@@ -922,7 +1160,7 @@ if (BRIDGE) {
 window.__onBack = () => {
   const open = [...document.querySelectorAll(".modal")].find(m => !m.hidden);
   if (open) { open.hidden = true; return true; }
-  if (!$("scrApp").hidden && $("v-bank").hidden) { show("bank"); return true; }
+  if (!$("scrApp").hidden && curView !== "home") { history.back(); return true; }
   return false;
 };
 
@@ -932,13 +1170,15 @@ window.__onBack = () => {
   document.title = APP.name;
   $("demoNote").hidden = !DEMO || OFFLINE;
   setAuthMode("signin");
+  const refParam = new URLSearchParams(location.search).get("ref");
+  if (refParam) { store.set("wave_ref", refParam); history.replaceState(null, "", location.pathname); }
   try { api = await createApi(); }
   catch (e) { screen("scrLogin"); $("authMsg").textContent = "Could not connect to the server. Check your internet and reload."; return; }
   api.onAuth(async u => {
     user = u;
     if (!u) { profile = null; setAuthMode("signin"); $("authPass").value = ""; screen("scrLogin"); return; }
     screen("scrLoading");
-    try { profile = await api.loadProfile(u); }
+    try { profile = await api.loadProfile(u, store.get("wave_ref", null)); store.set("wave_ref", null); }
     catch (e) { screen("scrLogin"); $("authMsg").textContent = "Signed in, but your account could not be loaded. Check that Firestore and its rules are set up (README steps 3–5)."; return; }
     enter();
   });

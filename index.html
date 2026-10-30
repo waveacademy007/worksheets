@@ -58,36 +58,76 @@
 
 <!-- App -->
 <div id="scrApp" hidden>
-<header class="top">
-  <div class="brand"><h1 id="brandName"></h1><span class="who"><span id="whoName"></span> <button class="link" id="signOut">Sign out</button></span></div>
-  <nav class="tabs" role="tablist">
-    <button class="tab" role="tab" aria-selected="true" data-tab="bank">Questions</button>
-    <button class="tab" role="tab" aria-selected="false" data-tab="ws">Worksheet <span class="count" id="tabCount">0</span></button>
-    <button class="tab" role="tab" aria-selected="false" data-tab="set">Settings</button>
-    <button class="tab" role="tab" aria-selected="false" data-tab="admin" id="adminTab" hidden>Admin</button>
-  </nav>
+<header class="hdr">
+  <button class="iconbtn" id="menuBtn" aria-label="Open menu"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h11M4 17h16"/></svg></button>
+  <div class="hdr-mid"><span class="hdr-title" id="hdrTitle">Worksheets</span><span class="hdr-sub" id="hdrSub"></span></div>
+  <button class="avatar" id="hdrAvatar" aria-label="Profile"></button>
 </header>
-<div class="planbar" id="planBar" hidden></div>
 
-<main>
-  <section id="v-bank">
-    <div class="filters">
-      <label class="f">Class<select id="fClass"></select></label>
-      <label class="f">Subject<select id="fSubject"></select></label>
-      <label class="f">Chapter<select id="fChapter"></select></label>
-      <label class="f">Exam<select id="fExam"></select></label>
-      <label class="f">Type<select id="fType"></select></label>
-      <label class="f">Search<input type="text" id="fSearch" placeholder="Word in question"></label>
+<div class="scrim" id="scrim" hidden></div>
+<nav class="drawer" id="drawer" aria-label="Menu" aria-hidden="true">
+  <div class="dr-head">
+    <div class="avatar big" id="drAvatar"></div>
+    <div class="dr-who"><b id="drName"></b><span id="drRole"></span><span id="drPhone" class="dr-phone"></span></div>
+  </div>
+  <div class="dr-list">
+    <button data-go="home"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z"/></svg>Home</button>
+    <button data-go="saved"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>My Worksheets</button>
+    <button data-go="drafts"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>Drafts</button>
+    <button data-go="set"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1.2"/><circle cx="14.5" cy="9" r="1.2"/><path d="M8 15c2 1.6 6 1.6 8 0"/></svg>Profile &amp; Branding</button>
+    <button data-go="refer"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="9" width="16" height="11" rx="1"/><path d="M3 9h18v-2H3zM12 7v13M12 7c-1-3-5-4-5-1.5S10 7 12 7zm0 0c1-3 5-4 5-1.5S14 7 12 7z"/></svg>Refer &amp; Earn</button>
+    <button data-go="feedback"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 10h8M8 13h5"/></svg>Feedback</button>
+    <button data-go="help"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 17h.01"/></svg>Help</button>
+    <a id="drCall"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h3l2 5-2 1.5a11 11 0 0 0 4.5 4.5L15 13l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 4 6a2 2 0 0 1 2-2z"/></svg>Contact Us</a>
+    <a id="drWa" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5l1.2-3.6A8 8 0 1 1 8.4 18.6z"/><path d="M9 8.6c.2 2.6 2.4 4.9 5 5.2l1-1.2-1.6-.9-.8.6a4 4 0 0 1-2-2l.6-.8-.9-1.6z"/></svg>WhatsApp Us</a>
+    <button data-go="admin" id="drAdmin" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Admin</button>
+    <button id="signOut"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/></svg>Sign out</button>
+  </div>
+</nav>
+
+<main id="views">
+  <section class="view" id="v-home">
+    <div class="pickers">
+      <label class="pick"><span>Exam</span><select id="fExam"></select></label>
+      <label class="pick"><span>Class</span><select id="fClass"></select></label>
+    </div>
+    <button class="pro" id="proBanner"></button>
+    <h2 class="sec-title">Subjects</h2>
+    <div class="subjects" id="subjGrid"></div>
+    <div class="promos">
+      <button class="promo gold" data-go="refer"><b>Refer &amp; Earn</b><span>Invite a teacher. Get 1 month free when they join.</span><em>Invite now</em><span class="promo-art"><svg class="art" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="9" width="16" height="11" rx="1"/><path d="M3 9h18v-2H3zM12 7v13M12 7c-1-3-5-4-5-1.5S10 7 12 7zm0 0c1-3 5-4 5-1.5S14 7 12 7z"/></svg></span></button>
+      <button class="promo teal" data-go="feedback"><b>Give your feedback</b><span>Tell us what to add or improve.</span><em>Write to us</em><span class="promo-art"><svg class="art" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 10h8M8 13h5"/></svg></span></button>
+    </div>
+  </section>
+
+  <section class="view" id="v-chapters" hidden>
+    <div class="crumb"><button class="iconbtn" data-back aria-label="Back"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div><b id="chTitle"></b><span id="chSub"></span></div></div>
+    <div class="chlist" id="chList"></div>
+  </section>
+
+  <section class="view" id="v-bank" hidden>
+    <div class="crumb"><button class="iconbtn" data-back aria-label="Back"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div><b id="qTitle"></b><span id="qSub"></span></div></div>
+    <div class="qtools">
+      <select id="fType" aria-label="Question type"></select>
+      <input type="search" id="fSearch" placeholder="Search in this chapter" aria-label="Search">
     </div>
     <div class="bar">
       <span class="grow" id="shownInfo"></span>
-      <button class="btn" id="selAll">Tick all shown</button>
-      <button class="btn" id="selNone">Clear all ticks</button>
+      <button class="btn" id="selAll">Tick all</button>
+      <button class="btn" id="selNone">Clear ticks</button>
     </div>
     <div class="qlist" id="qlist"></div>
   </section>
 
-  <section id="v-ws" hidden>
+  <section class="view" id="v-ws" hidden>
+    <div class="crumb"><button class="iconbtn" data-back aria-label="Back"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div><b>Your worksheet</b><span id="selInfo"></span></div></div>
+    <div class="ws-actions">
+      <button class="btn primary" id="dlPdf">Download PDF</button>
+      <button class="btn" id="sharePdf" hidden>Share</button>
+      <button class="btn" id="draftBtn">Save as draft</button>
+      <button class="btn" id="wsClear">Start new</button>
+    </div>
+    <p class="note" id="draftNote" hidden></p>
     <div class="panel">
       <div class="row2">
         <label class="f">Class line<input type="text" id="wClass"></label>
@@ -101,14 +141,30 @@
         <label class="check"><input type="checkbox" id="wWm" checked> Watermark</label>
       </div>
     </div>
-    <p class="planbar" id="wsHint" hidden style="border-radius:8px;margin:12px 0 0">Your academy name is empty. <button class="link" id="wsHintGo">Add it in Settings</button> so it appears on the worksheet header.</p>
+    <p class="planbar" id="wsHint" hidden style="border-radius:8px;margin:12px 0 0">Your academy name is empty. <button class="link" id="wsHintGo">Add it in Profile</button> so it appears on the worksheet header.</p>
     <div class="bar"><span class="grow" id="pageInfo"></span></div>
     <div class="sheets" id="sheets"></div>
   </section>
 
-  <section id="v-set" hidden>
+  <section class="view" id="v-saved" hidden>
+    <h2 class="sec-title">My Worksheets</h2>
+    <p class="note">Every worksheet you download is kept here. Open one to download it again or change it.</p>
+    <div class="wlist2" id="savedList"></div>
+  </section>
+
+  <section class="view" id="v-drafts" hidden>
+    <h2 class="sec-title">Drafts</h2>
+    <p class="note">Worksheets you saved to finish later.</p>
+    <div class="wlist2" id="draftList"></div>
+  </section>
+
+  <section class="view" id="v-set" hidden>
+    <div class="profile-card">
+      <div class="avatar big" id="pfAvatar"></div>
+      <div><b id="pfName"></b><span id="pfEmail"></span><span id="pfPlan" class="pf-plan"></span></div>
+    </div>
     <div class="panel">
-      <h2>Your branding</h2>
+      <h2>Worksheet branding</h2>
       <div class="row2">
         <label class="f">Academy name<input type="text" id="sAcademy"></label>
         <label class="f">Teacher name<input type="text" id="sTeacher"></label>
@@ -133,9 +189,44 @@
       </div>
       <p class="note">These details appear on every worksheet header and footer.</p>
     </div>
+    <button class="btn wide" id="signOut2">Sign out</button>
   </section>
 
-  <section id="v-admin" hidden>
+  <section class="view" id="v-refer" hidden>
+    <div class="refer-hero">
+      <svg class="art" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="9" width="16" height="11" rx="1"/><path d="M3 9h18v-2H3zM12 7v13M12 7c-1-3-5-4-5-1.5S10 7 12 7zm0 0c1-3 5-4 5-1.5S14 7 12 7z"/></svg>
+      <h2>Invite a teacher, get 1 month free</h2>
+      <p>Share your link. When a teacher signs up with it and starts a plan, your plan gets 1 extra month.</p>
+    </div>
+    <ol class="steps3"><li>Share your link on WhatsApp</li><li>Teacher creates an account with it</li><li>When their plan starts, you get +1 month</li></ol>
+    <label class="f">Your invite link<input type="text" id="refLink" readonly></label>
+    <div class="bar" style="margin:0"><button class="btn" id="refCopy">Copy link</button><a class="btn primary" id="refWa" target="_blank" rel="noopener">Share on WhatsApp</a></div>
+    <p class="note" id="refEarned"></p>
+  </section>
+
+  <section class="view" id="v-feedback" hidden>
+    <h2 class="sec-title">Feedback</h2>
+    <p class="note">What should we add or improve? Your message goes straight to the team.</p>
+    <div class="stars" id="fbStars" role="radiogroup" aria-label="Rating">
+      <button data-r="1" aria-label="1 star">★</button><button data-r="2" aria-label="2 stars">★</button><button data-r="3" aria-label="3 stars">★</button><button data-r="4" aria-label="4 stars">★</button><button data-r="5" aria-label="5 stars">★</button>
+    </div>
+    <label class="f">Your message<textarea id="fbText" maxlength="2000" placeholder="For example: please add more case study questions for Class 10 Physics"></textarea></label>
+    <button class="btn primary wide" id="fbSend">Send feedback</button>
+    <p class="note" id="fbMsg" role="status"></p>
+  </section>
+
+  <section class="view" id="v-help" hidden>
+    <h2 class="sec-title">Help</h2>
+    <div class="faq">
+      <details open><summary>How do I make a worksheet?</summary><p>On Home, choose Exam and Class, tap a subject, then a chapter. Tick the questions you want. Tap the round Worksheet button at the bottom, check the preview, and tap Download PDF.</p></details>
+      <details><summary>Can I take questions from many chapters?</summary><p>Yes. Your ticks stay when you go back. Open another chapter and tick more. The Worksheet button shows the total.</p></details>
+      <details><summary>Where is my PDF saved?</summary><p>In your phone's Downloads folder. Every downloaded worksheet is also kept in My Worksheets, so you can download it again any time.</p></details>
+      <details><summary>How do I add my logo and academy name?</summary><p>Open the menu, then Profile &amp; Branding. Your details appear on every worksheet header and footer.</p></details>
+      <details><summary>How do I renew my plan?</summary><p>Call or WhatsApp us from the menu. Your plan is extended from the day it ends, so no days are lost.</p></details>
+    </div>
+  </section>
+
+  <section class="view" id="v-admin" hidden>
     <div class="panel">
       <h2>Question bank</h2>
       <p class="note">Questions you add here are visible to every active teacher.</p>
@@ -147,6 +238,20 @@
         <button class="btn" id="seedBtn">Load sample questions</button>
       </div>
       <p class="note" id="adminMsg" role="status"></p>
+    </div>
+    <div class="panel" id="dangerPanel">
+      <h2>Delete questions</h2>
+      <p class="note">Deleted questions cannot be brought back.</p>
+      <div class="bar" style="margin:0;flex-wrap:wrap">
+        <button class="btn" id="delChapterBtn">Delete one chapter</button>
+        <button class="btn dangerbtn" id="delAllBtn">Delete ALL questions</button>
+      </div>
+      <div id="delBox" class="delbox" hidden>
+        <p id="delText" style="margin:0;font-weight:600"></p>
+        <label class="f">Type DELETE to confirm<input type="text" id="delType" autocomplete="off" autocapitalize="characters"></label>
+        <div class="bar" style="margin:0"><span class="grow"></span><button class="btn" id="delCancel">Cancel</button><button class="btn dangerbtn" id="delGo" disabled>Delete</button></div>
+      </div>
+      <p class="note" id="delMsg" role="status"></p>
     </div>
     <div class="panel" id="backupPanel" hidden>
       <h2>Backup</h2>
@@ -168,15 +273,27 @@
       <label class="f">Search<input type="text" id="uSearch" placeholder="Name or email"></label>
       <div class="ulist" id="uList"></div>
     </div>
+    <div class="panel" id="fbPanel">
+      <div class="bar" style="margin:0"><h2 class="grow">Feedback from teachers</h2><button class="btn" id="fbReload">Refresh</button></div>
+      <div class="fblist" id="fbList"></div>
+    </div>
   </section>
 </main>
 
-<div class="stickybar"><div class="in">
-  <span class="grow" id="selInfo">0 questions ticked</span>
-  <button class="btn" id="goWs">Preview</button>
-  <button class="btn" id="sharePdf" hidden>Share</button>
-  <button class="btn primary" id="dlPdf">Download PDF</button>
-</div></div>
+<nav class="bottombar" aria-label="Main">
+  <button class="bb" data-go="home" id="bbHome"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z"/></svg><span>Home</span></button>
+  <button class="fab" data-go="ws" id="goWs" aria-label="Open worksheet"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg><span class="badge" id="tabCount">0</span></button>
+  <button class="bb" data-go="set" id="bbProfile"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 19.5c1.4-3.2 4-4.8 7-4.8s5.6 1.6 7 4.8"/></svg><span>Profile</span></button>
+</nav>
+</div>
+
+<div class="modal" id="draftModal" hidden role="dialog" aria-modal="true" aria-labelledby="dmTitle">
+  <div class="mbox">
+    <div class="mhead"><h2 id="dmTitle">Save as draft</h2><button class="btn" id="dmX" aria-label="Close">✕</button></div>
+    <label class="f">Draft name<input type="text" id="dmName" maxlength="80"></label>
+    <div class="bar" style="margin:0"><span class="grow"></span><button class="btn" id="dmCancel">Cancel</button><button class="btn primary" id="dmSave">Save draft</button></div>
+    <p class="note" id="dmMsg" role="status"></p>
+  </div>
 </div>
 
 <div id="measure" aria-hidden="true"></div>
