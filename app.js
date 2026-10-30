@@ -417,7 +417,7 @@ async function renderWorksheets(kind) {
   catch (e) { box.innerHTML = `<div class="empty">Could not load. Check your internet.</div>`; return; }
   box.innerHTML = wsCache.length ? wsCache.map(w => `<div class="wrow"><div class="wt"><span class="wico${kind === "draft" ? " d" : ""}"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${kind === "draft" ? '<path d="M4 20h4L19 9l-4-4L4 16z"/>' : '<path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/>'}</svg></span>
     <div class="wm"><b>${esc(w.name)}</b><span>${w.count} question${w.count === 1 ? "" : "s"} · ${fmtDate(w.updatedAt)}${w.ws && w.ws.cls ? " · " + esc(w.ws.cls) : ""}</span></div></div>
-    <div class="wa"><button class="btn primary" data-wopen="${esc(w.id)}">${kind === "draft" ? "Continue" : "Open"}</button>${kind === "draft" ? "" : `<button class="btn" data-wpdf="${esc(w.id)}">Download PDF</button>`}<button class="btn del" data-wdel="${esc(w.id)}">Delete</button></div></div>`).join("")
+    <div class="wa"><button class="btn primary" data-wopen="${esc(w.id)}">${kind === "draft" ? "Continue" : "Open"}</button>${kind === "draft" ? "" : `<button class="btn" data-wpdf="${esc(w.id)}">Download</button>`}<button class="btn del" data-wdel="${esc(w.id)}">Delete</button></div></div>`).join("")
     : `<div class="empty">${kind === "draft" ? "No drafts yet. On the worksheet screen, tap “Save as draft”." : "No worksheets yet. Every PDF you download will appear here."}</div>`;
 }
 async function openWorksheet(id, thenPdf) {
@@ -1065,19 +1065,247 @@ async function withBusy(btn, label, fn) {
   try { await fn(); } catch (e) { if (e && e.name !== "AbortError") toast("Could not make the PDF. Try again."); }
   finally { btn.textContent = old; btn.disabled = false; updateCounts(false); }
 }
-$("dlPdf").onclick = () => withBusy($("dlPdf"), "Making PDF…", async () => {
-  const r = await makePdf(); if (!r) return;
-  if (BRIDGE) BRIDGE.saveFile(await blobToB64(r.blob), r.name, "application/pdf");
-  else { r.pdf.save(r.name); toast("PDF saved to Downloads"); }
-  autoSaveWorksheet();
-});
 const canShareFiles = !!BRIDGE || (() => { try { return !!(navigator.canShare && navigator.canShare({ files: [new File(["x"], "t.pdf", { type: "application/pdf" })] })); } catch (e) { return false; } })();
 $("sharePdf").hidden = !canShareFiles;
-$("sharePdf").onclick = () => withBusy($("sharePdf"), "Making…", async () => {
-  const r = await makePdf(); if (!r) return;
-  if (BRIDGE) BRIDGE.shareFile(await blobToB64(r.blob), r.name, "application/pdf");
-  else await navigator.share({ files: [new File([r.blob], r.name, { type: "application/pdf" })], title: r.name });
-  autoSaveWorksheet();
+
+// ================= PowerPoint slides =================
+// Slide: 13.333 x 7.5 in. Black header + gold line, dark green body, black footer.
+// The question sits in the right 30% (left 70% stays empty for the teacher).
+// Too long? Try 50% width; still too long? Continue on the next slide.
+const PPT = { W: 13.333, H: 7.5, HDR: 0.95, FTR: 0.55, GREEN: "14532D", BLACK: "0B0B0B", GOLD: "F4AE22", WHITE: "FFFFFF", PASSAGE: "DCEFE2" };
+const BODY_TOP = PPT.HDR + 0.04 + 0.25, BODY_BOTTOM = PPT.H - PPT.FTR - 0.2, BODY_H = BODY_BOTTOM - BODY_TOP, RIGHT_PAD = 0.32;
+let mctxP;
+function measureIn(text, pt, bold) {
+  if (!mctxP) mctxP = document.createElement("canvas").getContext("2d");
+  mctxP.font = `${bold ? "700 " : ""}${pt}pt Carlito, Calibri, Arial, sans-serif`;
+  return mctxP.measureText(text).width / 96;           // canvas px at 96 per inch
+}
+function wrapLines(text, pt, widthIn) {
+  const out = [];
+  for (const para of String(text || "").split("\n")) {
+    const words = para.split(/\s+/).filter(Boolean); let line = "";
+    if (!words.length) { out.push(""); continue; }
+    for (const w of words) {
+      const t = line ? line + " " + w : w;
+      if (measureIn(t, pt) <= widthIn * 0.97 || !line) line = t; else { out.push(line); line = w; }
+    }
+    out.push(line);
+  }
+  return out;
+}
+const lineH = pt => pt * 1.32 / 72;
+async function toPng(src) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1400 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const c = document.createElement("canvas"); c.width = Math.max(1, Math.round((img.naturalWidth || 600) * k)); c.height = Math.max(1, Math.round((img.naturalHeight || 400) * k));
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      res({ data: c.toDataURL("image/png").replace(/^data:/, ""), ar: c.width / c.height });
+    };
+    img.onerror = () => res(null); img.src = src;
+  });
+}
+// A question as a list of blocks. Text blocks carry their own indent; options may sit two per row.
+function pptBlocks(q, n, imgPng) {
+  const B = [];
+  const T = (text, o = {}) => B.push({ k: "text", text, ...o });
+  if (q.type === "AR") { T(q.text, { label: `Q${n}.`, pre: "Assertion (A): " }); T(q.reason || "", { pre: "Reason (R): " }); }
+  else if (q.type === "CS") { T("Read the passage and answer the questions that follow.", { label: `Q${n}.` }); T(q.case || "", { passage: true }); }
+  else T(q.text, { label: `Q${n}.` });
+  if (imgPng) B.push({ k: "img", ...imgPng });
+  if (q.type === "CS") (q.text || "").split("\n").filter(Boolean).forEach(t => T(t));
+  if (q.type === "MCQ" || q.type === "AR") {
+    const opts = q.type === "AR" ? AR_OPTS : (q.opts || []);
+    opts.forEach((o, i) => B.push({ k: "opt", label: "abcd"[i] + ")", text: o || "", optIndex: i, optCount: opts.length, all: opts }));
+  }
+  return B;
+}
+// Lay blocks out in a column of width w at font pt. Returns pages of placed pieces.
+function layoutBlocks(blocks, w, pt, allowSplit) {
+  const IND = Math.max(0.62 * pt / 24, measureIn("Q88.", pt, true) + 0.1), GAP = 0.13, OIND = IND, LAB = 0.4 * pt / 24;
+  const pages = [[]]; let y = 0;
+  const newPage = () => { pages.push([]); y = 0; };
+  const room = () => BODY_H - y;
+  const optsTwo = blocks.filter(b => b.k === "opt");
+  const two = optsTwo.length === 4 && optsTwo.every(b => measureIn(b.text, pt) <= (w - OIND) / 2 - LAB - 0.15);
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.k === "img") {
+      let iw = Math.min(w - IND, 3.4), ih = iw / b.ar;
+      const maxH = Math.min(2.3, BODY_H * 0.45); if (ih > maxH) { ih = maxH; iw = ih * b.ar; }
+      if (ih > room()) { if (!allowSplit) return null; newPage(); }
+      pages[pages.length - 1].push({ k: "img", x: IND, y, w: iw, h: ih, data: b.data }); y += ih + GAP; continue;
+    }
+    if (b.k === "opt") {
+      if (two) {
+        if (b.optIndex % 2) continue;                          // second of the pair is drawn with the first
+        const pair = [b, blocks[i + 1]];
+        const cw = (w - OIND) / 2;
+        const hh = Math.max(...pair.map(p => wrapLines(p.text, pt, cw - LAB - 0.1).length)) * lineH(pt);
+        if (hh > room()) { if (!allowSplit) return null; newPage(); }
+        pair.forEach((p, j) => pages[pages.length - 1].push({ k: "opt", x: OIND + j * cw, y, w: cw - 0.1, lab: LAB, label: p.label, lines: wrapLines(p.text, pt, cw - LAB - 0.1) }));
+        y += hh + GAP * 0.6; continue;
+      }
+      const lines = wrapLines(b.text, pt, w - OIND - LAB);
+      const hh = lines.length * lineH(pt);
+      if (hh > room()) { if (!allowSplit) return null; newPage(); }
+      pages[pages.length - 1].push({ k: "opt", x: OIND, y, w: w - OIND, lab: LAB, label: b.label, lines }); y += hh + GAP * 0.6; continue;
+    }
+    // text
+    const tw = w - IND - (b.passage ? 0.16 : 0);
+    let lines = wrapLines((b.pre || "") + b.text, pt, tw);
+    let first = true;
+    while (lines.length) {
+      const fit = Math.floor((room() + 0.01) / lineH(pt));
+      if (fit < 1 || (fit < lines.length && fit < 2)) { if (!allowSplit) return null; newPage(); continue; }
+      if (fit < lines.length && !allowSplit) return null;
+      const take = lines.slice(0, fit); lines = lines.slice(fit);
+      const hh = take.length * lineH(pt);
+      pages[pages.length - 1].push({ k: "text", x: IND, y, w: w - IND, h: hh, lines: take, label: first ? b.label : null, pre: first ? b.pre : null, passage: !!b.passage, last: !lines.length });
+      y += hh + GAP; first = false;
+      if (lines.length) newPage();
+    }
+  }
+  return pages.filter(p => p.length);
+}
+function fitQuestion(blocks) {
+  const W = PPT.W;
+  for (const pt of [24, 22, 20, 18]) { const p = layoutBlocks(blocks, W * 0.30 - RIGHT_PAD, pt, false); if (p && p.length === 1) return { pages: p, pt, w: W * 0.30 - RIGHT_PAD }; }
+  for (const pt of [22, 20, 18]) { const p = layoutBlocks(blocks, W * 0.50 - RIGHT_PAD, pt, false); if (p && p.length === 1) return { pages: p, pt, w: W * 0.50 - RIGHT_PAD }; }
+  return { pages: layoutBlocks(blocks, W * 0.30 - RIGHT_PAD, 20, true), pt: 20, w: W * 0.30 - RIGHT_PAD };
+}
+function pptChrome(pptx, slide, title, right, logo) {
+  slide.background = { color: PPT.GREEN };
+  slide.addShape("rect", { x: 0, y: 0, w: PPT.W, h: PPT.HDR, fill: { color: PPT.BLACK }, line: { color: PPT.BLACK } });
+  slide.addShape("rect", { x: 0, y: PPT.HDR, w: PPT.W, h: 0.04, fill: { color: PPT.GOLD }, line: { color: PPT.GOLD } });
+  let tx = 0.35;
+  if (logo) {
+    slide.addShape("ellipse", { x: 0.3, y: 0.12, w: 0.71, h: 0.71, fill: { color: PPT.WHITE }, line: { color: PPT.WHITE } });
+    const lw = 0.48, lh = lw / Math.max(logo.ar, 1), lw2 = lh * logo.ar;
+    slide.addImage({ data: logo.data, x: 0.3 + (0.71 - lw2) / 2, y: 0.12 + (0.71 - lh) / 2, w: lw2, h: lh });
+    tx = 1.2;
+  }
+  slide.addText(title || "", { x: tx, y: 0, w: PPT.W - tx - 2.6, h: PPT.HDR, fontFace: "Calibri", fontSize: 26, bold: true, color: PPT.WHITE, valign: "middle", margin: 0, fit: "shrink" });
+  slide.addText(right || "", { x: PPT.W - 2.5, y: 0, w: 2.2, h: PPT.HDR, fontFace: "Calibri", fontSize: 16, bold: true, color: PPT.GOLD, align: "right", valign: "middle", margin: 0 });
+  const fy = PPT.H - PPT.FTR;
+  slide.addShape("rect", { x: 0, y: fy, w: PPT.W, h: PPT.FTR, fill: { color: PPT.BLACK }, line: { color: PPT.BLACK } });
+  const f = { y: fy, h: PPT.FTR, fontFace: "Calibri", fontSize: 14, color: "E8E8E8", valign: "middle", margin: 0 };
+  slide.addText(settings.teacher || profile.name || "", { ...f, x: 0.35, w: 4.2 });
+  slide.addText(settings.academy || "", { ...f, x: 4.6, w: 4.1, align: "center", bold: true, color: PPT.GOLD });
+  slide.addText(settings.phone ? "Ph: " + settings.phone : "", { ...f, x: PPT.W - 4.55, w: 4.2, align: "right" });
+}
+const clsText = () => String(settings.cls || "").replace(/\s*_\s*/g, " · ");
+async function makePpt(opts) {
+  await loadPickedImages();
+  const qs0 = [...picked.values()];
+  if (!qs0.length) { toast("Tick at least one question first"); return null; }
+  if (!window.PptxGenJS) { toast("PowerPoint tools did not load. Check your internet and reload."); return null; }
+  const order = ["MCQ", "AR", "SA", "CS", "LA"];
+  const qs = settings.group ? qs0.slice().sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type)) : qs0;
+  const pptx = new PptxGenJS(); pptx.layout = "LAYOUT_WIDE";
+  pptx.author = settings.teacher || ""; pptx.company = settings.academy || ""; pptx.title = settings.topic || "Worksheet";
+  const logo = settings.logo ? await toPng(settings.logo) : null;
+  const N = qs.length;
+  const chapters = [...new Set(qs.map(q => q.chapter))];
+  if (opts.title) {
+    const s = pptx.addSlide(); pptChrome(pptx, s, settings.academy || APP.name, clsText(), logo);
+    let y = 1.5;
+    if (logo) { s.addShape("ellipse", { x: PPT.W / 2 - 1, y: 1.35, w: 2, h: 2, fill: { color: PPT.WHITE }, line: { color: PPT.GOLD, width: 4 } }); const bw = 1.34, bh = bw / Math.max(logo.ar, 1), bw2 = bh * logo.ar; s.addImage({ data: logo.data, x: PPT.W / 2 - bw2 / 2, y: 2.35 - bh / 2, w: bw2, h: bh }); y = 3.55; }
+    s.addText(settings.academy || APP.name, { x: 0.5, y, w: PPT.W - 1, h: 0.8, fontFace: "Calibri", fontSize: 40, bold: true, color: PPT.WHITE, align: "center", margin: 0, fit: "shrink" });
+    s.addText(settings.topic || chapters.join(" · "), { x: 0.8, y: y + 0.85, w: PPT.W - 1.6, h: 0.6, fontFace: "Calibri", fontSize: 26, bold: true, color: PPT.GOLD, align: "center", margin: 0, fit: "shrink" });
+    s.addText(`${settings.cls ? clsText() + " · " : ""}${N} question${N === 1 ? "" : "s"}`, { x: 0.8, y: y + 1.5, w: PPT.W - 1.6, h: 0.5, fontFace: "Calibri", fontSize: 20, color: "E8E8E8", align: "center", margin: 0 });
+  }
+  for (let i = 0; i < N; i++) {
+    const q = qs[i], n = i + 1;
+    const img = q.img || (q.hasImg ? imgCache[q.id] : null);
+    const png = img ? await toPng(img) : null;
+    const { pages, pt, w } = fitQuestion(pptBlocks(q, n, png));
+    const x0 = PPT.W - RIGHT_PAD - w;
+    pages.forEach((items, pi) => {
+      const s = pptx.addSlide();
+      pptChrome(pptx, s, q.chapter, `Q ${n}${pi ? " (cont.)" : ""} / ${N}`, logo);
+      for (const it of items) {
+        const x = x0 + it.x, y = BODY_TOP + it.y;
+        if (it.k === "img") { s.addImage({ data: it.data, x, y, w: it.w, h: it.h }); continue; }
+        if (it.k === "opt") {
+          s.addText(it.label, { x, y, w: it.lab, h: it.lines.length * lineH(pt), fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, valign: "top", margin: 0 });
+          s.addText(it.lines.join(" "), { x: x + it.lab, y, w: it.w - it.lab, h: it.lines.length * lineH(pt), fontFace: "Calibri", fontSize: pt, color: PPT.WHITE, align: "justify", valign: "top", margin: 0, lineSpacingMultiple: 1.1 });
+          continue;
+        }
+        if (it.label) s.addText(it.label, { x: x0, y, w: it.x, h: lineH(pt), fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, valign: "top", margin: 0 });
+        let body = it.lines.join(" "); const runs = [];
+        if (it.pre && body.startsWith(it.pre)) { runs.push({ text: it.pre, options: { bold: true, color: PPT.GOLD } }); body = body.slice(it.pre.length); }
+        runs.push({ text: body, options: {} });
+        if (it.passage) s.addShape("rect", { x, y, w: 0.05, h: it.h, fill: { color: PPT.GOLD }, line: { color: PPT.GOLD } });
+        s.addText(runs, { x: it.passage ? x + 0.16 : x, y, w: it.passage ? it.w - 0.16 : it.w, h: it.h, fontFace: "Calibri", fontSize: pt, color: it.passage ? PPT.PASSAGE : PPT.WHITE, align: "justify", valign: "top", margin: 0, lineSpacingMultiple: 1.1 });
+        if (!it.last && pages.length > 1 && it === items[items.length - 1]) s.addText("Continued on next slide →", { x, y: BODY_BOTTOM - 0.3, w: it.w, h: 0.3, fontFace: "Calibri", fontSize: 13, bold: true, color: PPT.GOLD, margin: 0 });
+      }
+      if (pi < pages.length - 1 && !items.some(it => it.k === "text" && !it.last)) s.addText("Continued on next slide →", { x: x0, y: BODY_BOTTOM - 0.3, w, h: 0.3, fontFace: "Calibri", fontSize: 13, bold: true, color: PPT.GOLD, margin: 0 });
+    });
+  }
+  if (opts.key) {
+    const keyed = qs.map((q, i) => ({ n: i + 1, q })).filter(x => x.q.type === "MCQ" || x.q.type === "AR");
+    if (keyed.length) {
+      const per = 10, rowsPerSlide = 8;            // 4 Q/Ans pairs per slide
+      const groups = []; for (let i = 0; i < keyed.length; i += per) groups.push(keyed.slice(i, i + per));
+      for (let g = 0; g < groups.length; g += rowsPerSlide / 2) {
+        const s = pptx.addSlide(); pptChrome(pptx, s, "Answer Key", `${keyed.length} answers`, logo);
+        const rows = [];
+        const H = { bold: true, color: PPT.GOLD, fill: { color: "0F3F22" } };
+        for (const grp of groups.slice(g, g + rowsPerSlide / 2)) {
+          const pad = Array.from({ length: per }, (_, k) => grp[k] || null);
+          rows.push([{ text: "Q.", options: H }, ...pad.map(x => ({ text: x ? String(x.n) : "" }))]);
+          rows.push([{ text: "Ans.", options: H }, ...pad.map(x => ({ text: x ? (x.q.ans || "–") : "", options: { bold: true } }))]);
+        }
+        s.addTable(rows, { x: 0.6, y: BODY_TOP + 0.1, w: PPT.W - 1.2, colW: [1.13, ...Array(per).fill((PPT.W - 1.2 - 1.13) / per)], fontFace: "Calibri", fontSize: 20, color: PPT.WHITE, align: "center", valign: "middle", rowH: 0.5, border: { type: "solid", pt: 1, color: "8FB59B" } });
+      }
+    }
+  }
+  const name = `${(settings.topic || "worksheet").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "worksheet"}_slides.pptx`;
+  const blob = await pptx.write({ outputType: "blob" });
+  return { name, blob };
+}
+function saveBlob(blob, name) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+// ================= Download / Share chooser =================
+let fmtMode = "download";
+function openFormat(mode) {
+  if (!picked.size) { toast("Tick at least one question first"); return; }
+  fmtMode = mode;
+  $("fmtTitle").textContent = mode === "share" ? "Share as" : "Download as";
+  $("pTitle").checked = settings.pptTitle !== false; $("pKey").checked = settings.pptKey !== false;
+  $("fmtMsg").textContent = ""; $("fmtModal").hidden = false;
+}
+$("dlPdf").onclick = () => openFormat("download");
+$("sharePdf").onclick = () => openFormat("share");
+$("fmtX").onclick = () => { $("fmtModal").hidden = true; };
+$("pTitle").onchange = () => { settings.pptTitle = $("pTitle").checked; saveSet(); };
+$("pKey").onchange = () => { settings.pptKey = $("pKey").checked; saveSet(); };
+document.querySelectorAll("#fmtModal [data-fmt]").forEach(b => b.onclick = async () => {
+  const fmt = b.dataset.fmt, btns = [...document.querySelectorAll("#fmtModal [data-fmt]")];
+  btns.forEach(x => x.disabled = true); $("fmtMsg").textContent = fmt === "ppt" ? "Making slides…" : "Making PDF…";
+  try {
+    let file;
+    if (fmt === "pdf") { const r = await makePdf(); if (r) file = { name: r.name, blob: r.blob, mime: "application/pdf", pdf: r.pdf }; }
+    else { const r = await makePpt({ title: $("pTitle").checked, key: $("pKey").checked }); if (r) file = { name: r.name, blob: r.blob, mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }; }
+    if (!file) { $("fmtMsg").textContent = ""; return; }
+    if (fmtMode === "share") {
+      if (BRIDGE) BRIDGE.shareFile(await blobToB64(file.blob), file.name, file.mime);
+      else await navigator.share({ files: [new File([file.blob], file.name, { type: file.mime })], title: file.name });
+    } else if (BRIDGE) BRIDGE.saveFile(await blobToB64(file.blob), file.name, file.mime);
+    else if (file.pdf) file.pdf.save(file.name);
+    else saveBlob(file.blob, file.name);
+    $("fmtModal").hidden = true;
+    toast(fmtMode === "share" ? "Shared" : (fmt === "ppt" ? "Slides saved to Downloads" : "PDF saved to Downloads"));
+    autoSaveWorksheet();
+  } catch (e) {
+    if (e && e.name === "AbortError") { $("fmtMsg").textContent = ""; return; }
+    $("fmtMsg").textContent = "Could not make the file. Try again.";
+  } finally { btns.forEach(x => x.disabled = false); }
 });
 
 // ================= Offline extras: backup, install, storage =================

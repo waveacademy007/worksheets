@@ -360,3 +360,17 @@ main#views{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-ins
 .toast{bottom:calc(96px + env(safe-area-inset-bottom,0px))!important}
 @media (prefers-reduced-motion: reduce){.view,.scrim,.bump,.q input[type=checkbox]:checked{animation:none!important}.drawer{transition:none}}
 @media (min-width:700px){.ws-actions{grid-template-columns:repeat(4,auto);justify-content:start}}
+
+/* download chooser */
+.fmtgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fmt{border:2px solid var(--line);background:var(--surface);border-radius:16px;padding:16px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;text-align:center;transition:transform .12s,border-color .15s}
+.fmt:active{transform:scale(.96)}
+.fmt:hover{border-color:var(--accent)}
+.fmt b{color:var(--navy)}
+.fmt small{color:var(--muted);font-size:.8rem}
+.fmt:disabled{opacity:.5}
+.fi{width:56px;height:64px;border-radius:8px;display:grid;place-items:center;font-weight:800;color:#fff;font-size:.95rem;letter-spacing:.04em;position:relative;clip-path:polygon(0 0,72% 0,100% 22%,100% 100%,0 100%)}
+.fi.pdf{background:#c62828}
+.fi.ppt{background:#d24726}
+.fi.ppt{background:linear-gradient(135deg,#d24726,#b7472a)}
+.pptopts{display:grid;gap:6px;border-top:1px solid var(--line);padding-top:10px}

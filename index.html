@@ -122,7 +122,7 @@
   <section class="view" id="v-ws" hidden>
     <div class="crumb"><button class="iconbtn" data-back aria-label="Back"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div><b>Your worksheet</b><span id="selInfo"></span></div></div>
     <div class="ws-actions">
-      <button class="btn primary" id="dlPdf">Download PDF</button>
+      <button class="btn primary" id="dlPdf">Download</button>
       <button class="btn" id="sharePdf" hidden>Share</button>
       <button class="btn" id="draftBtn">Save as draft</button>
       <button class="btn" id="wsClear">Start new</button>
@@ -287,6 +287,21 @@
 </nav>
 </div>
 
+<div class="modal" id="fmtModal" hidden role="dialog" aria-modal="true" aria-labelledby="fmtTitle">
+  <div class="mbox">
+    <div class="mhead"><h2 id="fmtTitle">Download as</h2><button class="btn" id="fmtX" aria-label="Close">✕</button></div>
+    <div class="fmtgrid">
+      <button class="fmt" data-fmt="pdf"><span class="fi pdf">PDF</span><b>PDF Worksheet</b><small>For printing and homework</small></button>
+      <button class="fmt" data-fmt="ppt"><span class="fi ppt">PPT</span><b>PowerPoint Slides</b><small>One question per slide, for class</small></button>
+    </div>
+    <div class="pptopts">
+      <span class="lb-title">PowerPoint options</span>
+      <label class="check"><input type="checkbox" id="pTitle" checked> Title slide at the start</label>
+      <label class="check"><input type="checkbox" id="pKey" checked> Answer key slide at the end</label>
+    </div>
+    <p class="note" id="fmtMsg" role="status"></p>
+  </div>
+</div>
 <div class="modal" id="draftModal" hidden role="dialog" aria-modal="true" aria-labelledby="dmTitle">
   <div class="mbox">
     <div class="mhead"><h2 id="dmTitle">Save as draft</h2><button class="btn" id="dmX" aria-label="Close">✕</button></div>
@@ -404,6 +419,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
