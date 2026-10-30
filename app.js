@@ -1293,18 +1293,34 @@ document.querySelectorAll("#fmtModal [data-fmt]").forEach(b => b.onclick = async
     if (fmt === "pdf") { const r = await makePdf(); if (r) file = { name: r.name, blob: r.blob, mime: "application/pdf", pdf: r.pdf }; }
     else { const r = await makePpt({ title: $("pTitle").checked, key: $("pKey").checked }); if (r) file = { name: r.name, blob: r.blob, mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }; }
     if (!file) { $("fmtMsg").textContent = ""; return; }
+    autoSaveWorksheet();
     if (fmtMode === "share") {
-      if (BRIDGE) BRIDGE.shareFile(await blobToB64(file.blob), file.name, file.mime);
-      else await navigator.share({ files: [new File([file.blob], file.name, { type: file.mime })], title: file.name });
-    } else if (BRIDGE) BRIDGE.saveFile(await blobToB64(file.blob), file.name, file.mime);
+      if (BRIDGE) { BRIDGE.shareFile(await blobToB64(file.blob), file.name, file.mime); $("fmtModal").hidden = true; return; }
+      const f = new File([file.blob], file.name, { type: file.mime });
+      let ok = false; try { ok = !!(navigator.canShare && navigator.canShare({ files: [f] })); } catch (e) { ok = false; }
+      if (ok) {
+        // Sharing needs a fresh tap, so offer a button once the file is ready
+        $("fmtMsg").innerHTML = `Ready: <b>${esc(file.name)}</b>`;
+        const go = document.createElement("button"); go.className = "btn primary wide"; go.textContent = "Share now";
+        go.onclick = async () => {
+          try { await navigator.share({ files: [f], title: file.name }); $("fmtModal").hidden = true; toast("Shared"); }
+          catch (e) { if (e.name !== "AbortError") { saveBlob(file.blob, file.name); $("fmtMsg").textContent = `Sharing did not work here, so the file was saved to Downloads instead. Open ${file.name} from Downloads and share it on WhatsApp.`; } }
+        };
+        $("fmtMsg").appendChild(go);
+      } else {
+        saveBlob(file.blob, file.name);
+        $("fmtMsg").textContent = `This browser cannot share ${fmt === "ppt" ? "PowerPoint" : "these"} files directly, so ${file.name} was saved to Downloads. Open it from Downloads (Files app) and share it on WhatsApp from there.`;
+      }
+      return;
+    }
+    if (BRIDGE) BRIDGE.saveFile(await blobToB64(file.blob), file.name, file.mime);
     else if (file.pdf) file.pdf.save(file.name);
     else saveBlob(file.blob, file.name);
     $("fmtModal").hidden = true;
-    toast(fmtMode === "share" ? "Shared" : (fmt === "ppt" ? "Slides saved to Downloads" : "PDF saved to Downloads"));
-    autoSaveWorksheet();
+    toast(fmt === "ppt" ? "Slides saved to Downloads" : "PDF saved to Downloads");
   } catch (e) {
     if (e && e.name === "AbortError") { $("fmtMsg").textContent = ""; return; }
-    $("fmtMsg").textContent = "Could not make the file. Try again.";
+    $("fmtMsg").textContent = `Could not make the file. Try again. (${(e && (e.message || e.name)) || "unknown error"})`;
   } finally { btns.forEach(x => x.disabled = false); }
 });
 
