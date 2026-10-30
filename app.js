@@ -1263,7 +1263,9 @@ async function makePpt(opts) {
     }
   }
   const name = `${(settings.topic || "worksheet").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "worksheet"}_slides.pptx`;
-  const blob = await pptx.write({ outputType: "blob" });
+  // Give the file the PowerPoint type so phones open it in PowerPoint / Google Slides, not as a zip
+  const raw = await pptx.write({ outputType: "arraybuffer" });
+  const blob = new Blob([raw], { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
   return { name, blob };
 }
 function saveBlob(blob, name) {
