@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=2.0";
+import { createApi, DEMO } from "./api.js?v=2.2";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.0";
-import { SAMPLE } from "./sample-questions.js?v=2.0";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.0";
+import { TYPES, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.2";
+import { SAMPLE } from "./sample-questions.js?v=2.2";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.2";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "2.0";
+const APP_VERSION = "2.2";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -447,10 +447,16 @@ function updateCounts(animate) {
 $("selAll").onclick = () => { shown().forEach(pick); savePicked(); renderList(); updateCounts(true); };
 $("selNone").onclick = () => { shown().forEach(q => picked.delete(q.id)); savePicked(); renderList(); updateCounts(true); };
 
+// A JEE / NEET source also tags the question with that exam, so the Exam filter finds it
+function examsFromSrc(q) {
+  const ex = new Set(q.exam && q.exam.length ? q.exam : ["CBSE"]);
+  for (const x of q.src || []) { if (/^JEE/.test(x.s)) ex.add("JEE"); if (x.s === "NEET") ex.add("NEET"); }
+  return [...ex];
+}
 // Save questions to the online bank, then refresh chapters
 async function saveToBank(list) {
   const base = Date.now() * 1000;
-  const withSeq = list.map((q, i) => ({ ...q, seq: base + i }));
+  const withSeq = list.map((q, i) => ({ ...q, exam: examsFromSrc(q), seq: base + i }));
   await api.addQuestions(withSeq, (d, t) => toast(`Saving ${d} of ${t}…`, 8000));
   if (OFFLINE) backupReminder();
   if (addFromQuestions(syllabus, withSeq)) { try { await saveSyllabus(); } catch (e) { toast("Questions saved, but the syllabus could not be updated."); } }
@@ -687,7 +693,7 @@ async function saveEdit(old,q){
   const imgMode=aImg?(aImg.existing?"keep":"new"):(old.hasImg&&!$("aImgMsg").textContent.startsWith("The diagram could not")?"remove":"keep");
   const data={...q};delete data.img;
   if(imgMode==="keep"&&old.hasImg&&!aImg){data.imgAR=old.imgAR;data.imgW=old.imgW}
-  data.seq=old.seq;
+  data.seq=old.seq;data.exam=examsFromSrc(data);
   $("addSave").disabled=true;$("aErr").textContent="Saving changes…";
   let saved;
   try{saved=await api.updateQuestion(old.id,data,imgMode==="new"?q.img:imgMode);}
@@ -804,6 +810,12 @@ function omml(n){const name=ln(n),c=k=>{const e=kid(n,k);return e?omml(e):""};
   if(name==="rad"){const d=c("deg"),e=c("e");return (d?toSup(d):"")+"√"+(e.length>1?"("+e+")":e)}
   if(name==="d"){const beg=attr(kid(kid(n,"dPr")||n,"begChr")||null,"val")??"(",end=attr(kid(kid(n,"dPr")||n,"endChr")||null,"val")??")";return beg+kids(n,"e").map(omml).join(", ")+end}
   if(name==="nary"){const ch=attr(kid(kid(n,"naryPr")||n,"chr")||null,"val")||"∫";const lo=c("sub"),hi=c("sup");return ch+(lo?toSub(lo):"")+(hi?toSup(hi):"")+" "+c("e")}
+  // accents: î ĵ k̂ (unit vectors), arrows, bars
+  if(name==="acc"){const ch=attr(kid(kid(n,"accPr")||n,"chr")||null,"val")??"\u0302",e=c("e");
+    if(ch==="\u0302"||ch==="^"){if(e==="i")return "î";if(e==="j")return "ĵ"}
+    const cm={"\u0302":"\u0302","^":"\u0302","\u20d7":"\u20d7","→":"\u20d7","\u0305":"\u0305","¯":"\u0305","\u0307":"\u0307","˙":"\u0307","~":"\u0303","\u0303":"\u0303"}[ch]||ch;
+    return e+cm}
+  if(name==="bar")return c("e")+"\u0305";
   if(/Pr$/.test(name))return "";
   return [...n.children].map(omml).join("");
 }
@@ -847,7 +859,11 @@ async function readDocx(file){
       for(const r of rows)for(const c of r)for(const p of c)out.push(p)}
     else if(nm==="sdt"){const sc=kid(ch,"sdtContent");if(sc)await block(sc)}}}
   await block(kid(doc.documentElement,"body"));
-  return out;
+  // page headers often carry "Class 11th _ Physics", "Concept _ Centre of Mass"
+  const head=[];
+  for(const name of Object.keys(zip.files).filter(n=>/^word\/header\d*\.xml$/.test(n)).sort()){const hx=await xml(name);if(!hx)continue;
+    for(const p of hx.getElementsByTagNameNS(W_NS,"p")){const t=[...p.getElementsByTagNameNS(W_NS,"t")].map(x=>x.textContent).join("").trim();if(t&&!head.some(h=>h.text===t))head.push({text:t,imgs:[],list:null,header:true})}}
+  return [...head,...out];
 }
 // Turn the paragraphs into questions
 function parseWord(paras){
@@ -856,7 +872,7 @@ function parseWord(paras){
   const lf=p=>p.list?p.list.fmt:"";
   const isQList=p=>{if(!p.list||!/decimal/i.test(p.list.fmt))return false;if(qNum===null){qNum=p.list.id;return true}return p.list.id===qNum&&p.list.lv==="0"};
   const isOptList=p=>p.list&&cur&&(/letter|bullet/i.test(p.list.fmt)||(/decimal/i.test(p.list.fmt)&&!(p.list.id===qNum&&p.list.lv==="0")));
-  const startQ=t=>{cur={text:t||"",opts:[],imgs:[],ans:"",reason:"",assert:"",casePas:"",lines:[]};qs.push(cur);last="text"};
+  const startQ=t=>{cur={text:t||"",opts:[],imgs:[],ans:"",reason:"",assert:"",casePas:"",lines:[],src:[]};qs.push(cur);last="text"};
   const addOpt=(L,t)=>{if(!cur)return;const i="abcd".indexOf(L.toLowerCase());if(i<0)return;cur.opts[i]=(t||"").trim();last="opt"+i};
   const keyPairs=t=>{let m,re=/(?:Q\.?\s*)?(\d{1,3})\s*[.)\-:–]?\s*\(?([a-dA-D])\)?(?![a-z])/g,found=0;while((m=re.exec(t))){key[+m[1]]=m[2].toLowerCase();found++}return found};
   const OPT_SPLIT=/(?:^|\s)\(?([a-dA-D])\)\s*|(?:^|\t|\s{2,})([a-dA-D])[.)]\s+/g;
@@ -865,15 +881,20 @@ function parseWord(paras){
       if(t.length>=2&&/^q/i.test(t[0][0]||"")&&/^ans/i.test(t[1][0]||"")){for(let r=0;r+1<t.length;r+=2)t[r].forEach((v,i)=>{const n=parseInt(v,10),a=(t[r+1][i]||"").trim().toLowerCase().replace(/[()]/g,"");if(n&&/^[a-d]$/.test(a))key[n]=a});p.skipCells=true}
       continue}
     let t=p.text.trim();
-    if(!t&&!p.imgs.length)continue;
-    if(!qs.length){const m1=t.match(/topic\s*[:\-–]\s*(.+)/i);if(m1)meta.chapter=m1[1].trim();
-      const m2=t.match(/class\s*[:\-–]?\s*(XII|XI|IX|X|\d{1,2})\b/i);if(m2)meta.cls={IX:9,X:10,XI:11,XII:12}[m2[1].toUpperCase()]||parseInt(m2[1],10);
+    // an empty line with Word's own number (1. 2. 3.) starts a question whose text is on the next lines
+    if(!t&&!p.imgs.length){if(!inKey&&!p.header&&isQList(p))startQ("");continue}
+    if(!qs.length||p.header){const m1=t.match(/(?:topic|chapter)\s*[:\-–_]\s*(.+)/i);if(m1)meta.chapter=m1[1].trim();
+      const mc=t.match(/concept\s*[:\-–_]\s*(.+)/i);if(mc)meta.concept=mc[1].trim();
+      const m2=t.match(/class\s*[:\-–_]?\s*(XII|XI|IX|X|\d{1,2})(?:st|nd|rd|th)?\b/i);if(m2)meta.cls={IX:9,X:10,XI:11,XII:12}[m2[1].toUpperCase()]||parseInt(m2[1],10);
       const m3=t.match(/\b(maths?|mathematics|physics|chemistry|biology)\b/i);if(m3)meta.subject=({math:"Maths",maths:"Maths",mathematics:"Maths"})[m3[1].toLowerCase()]||m3[1][0].toUpperCase()+m3[1].slice(1).toLowerCase()}
+    if(p.header)continue;
     if(/^(answer\s*key|answers|answer\s*sheet|solutions?)\s*[:\-]?\s*$/i.test(t)){inKey=true;continue}
     if(inKey){keyPairs(t);continue}
     // answer line inside a question
     const am=t.match(/^(?:ans(?:wer)?|correct\s*option)\s*[.:\-–]\s*(.*)$/i);
-    if(am){if(cur){const a=am[1].trim();const l=a.match(/^\(?([a-dA-D])\)?(?:\W|$)/);cur.ans=l?l[1].toLowerCase():a}continue}
+    if(am){if(cur){const a=am[1].trim();const l=a.match(/^\(?([a-dA-D])\)?(?:\W|$)/);cur.ans=l?l[1].toLowerCase():a;last="ans"}continue}
+    // a line that is only a source, e.g. "JEE Mains: 2026", "JEE Adv.", "[NEET 2019]"
+    if(cur&&t.length<=60&&/^\[?\s*(jee|neet|ncert|cbse|aipmt|aiims|iit|board|exemplar)/i.test(t)){const sr=parseSources(t.replace(/[\[\]]/g,""));if(sr.length){for(const x of sr)if(!cur.src.some(y=>y.s===x.s&&y.y===x.y))cur.src.push(x);continue}}
     // new question?
     let qm=t.match(/^(?:Q(?:ues(?:tion)?)?\.?\s*)(\d{1,3})\s*[.):\-–]?\s*(.*)$/is)||t.match(/^(\d{1,3})\s*[.)]\s+(.*)$/s);
     if(!qm&&isQList(p))qm=[null,null,t];
@@ -891,6 +912,8 @@ function parseWord(paras){
     // roman sub-questions belong to the question text
     if(/roman/i.test(lf(p)))t="("+["i","ii","iii","iv","v","vi"][cur.lines.length%6]+") "+t;
     // continuation text
+    if(last==="ans"&&/^[A-Za-z .&-]{2,30}:$/.test(t))continue;   // section labels such as "HOTS:"
+    if(last==="ans"){if(!/^[abcd]$/.test(cur.ans))cur.ans=(cur.ans+" "+t).trim();cur.imgs.push(...p.imgs);continue}   // answer written on the next line(s)
     if(last.startsWith("opt")){const i=+last.slice(3);cur.opts[i]+=" "+t}
     else if(last==="reason")cur.reason+=" "+t;
     else if(last==="assert")cur.assert+=" "+t;
@@ -905,9 +928,9 @@ function parseWord(paras){
       const ls=q.lines.slice();const intro=/^read the|case\s*(study|based)/i.test(ls[0]||"")?ls.shift():"";
       const subIx=ls.findIndex(l=>/^\(?(i|1|a)\)/i.test(l));passage=(subIx>0?ls.slice(0,subIx):ls.slice(0,1)).join(" ");text=(subIx>0?ls.slice(subIx):ls.slice(1)).join("\n")||intro}
     else type=/\b(explain|describe|draw|derive|discuss|elaborate|differentiate)\b/i.test(text)&&text.length>90?"LA":"SA";
-    let src=[];
+    let src=q.src.slice();
     const tm=text.match(/\s*[\[(]([^\[\]()]{3,60})[\])]\s*$/);
-    if(tm){const p=parseSources(tm[1]);if(p.length&&/\d{4}|ncert|exemplar|jee|neet|cbse|pyq|sample|board/i.test(tm[1])){src=p;text=text.slice(0,tm.index).trim()}}
+    if(tm){const p=parseSources(tm[1]);if(p.length&&/\d{4}|ncert|exemplar|jee|neet|cbse|pyq|sample|board/i.test(tm[1])){for(const x of p)if(!src.some(y=>y.s===x.s&&y.y===x.y))src.push(x);text=text.slice(0,tm.index).trim()}}
     let ans=q.ans||key[n]||"";
     if(type==="MCQ"){const o=[0,1,2,3].map(i=>(q.opts[i]||"").trim());if(o.some(x=>!x))issues.push("fewer than 4 options");q.opts=o;if(!/^[abcd]$/.test(ans)){if(ans)issues.push("answer is not a–d");else issues.push("no answer found");ans=/^[abcd]$/.test(ans)?ans:""}}
     if(type==="AR"&&!q.reason)issues.push("Reason not found");
@@ -921,9 +944,11 @@ function wdFill(level,keep={}){
   const cls=+$("wdCls").value;
   if(level<=0)fillPick($("wdSubject"),null,subjNames(cls),{keep:keep.subject});
   if(level<=1){const chs=chapList(cls,$("wdSubject").value,true).map(x=>x.n);
-    fillPick($("wdChapter"),$("wdChapterNew"),chs,{newLabel:"+ New chapter…",keep:keep.chapter!==undefined?(chs.some(c=>sameName(c,keep.chapter))||!keep.chapter?keep.chapter:NEW):undefined});
+    fillPick($("wdChapter"),$("wdChapterNew"),chs,{none:"Choose chapter…",newLabel:"+ New chapter…",keep:keep.chapter!==undefined?(chs.some(c=>sameName(c,keep.chapter))||!keep.chapter?keep.chapter:NEW):undefined});
     if(keep.chapter&&$("wdChapter").value===NEW)$("wdChapterNew").value=keep.chapter}
-  if(level<=2)fillPick($("wdConcept"),$("wdConceptNew"),wdConcepts(),{none:"No concept",newLabel:"+ New concept…"});
+  if(level<=2){const cs=wdConcepts(),kc=keep.concept;
+    fillPick($("wdConcept"),$("wdConceptNew"),cs,{none:"No concept",newLabel:"+ New concept…",keep:kc?(cs.some(c=>sameName(c,kc))?kc:NEW):undefined});
+    if(kc&&$("wdConcept").value===NEW)$("wdConceptNew").value=kc}
 }
 const wdConcepts=()=>$("wdChapter").value===NEW?[]:conList(+$("wdCls").value,$("wdSubject").value,$("wdChapter").value,true).map(x=>x.n);
 function wdRender(){const {qs}=wdData;
@@ -955,7 +980,11 @@ $("wdFile").addEventListener("change",async e=>{const f=e.target.files&&e.target
   $("wdMsg").textContent="Reading Word file…";
   try{const paras=await readDocx(f);wdData=parseWord(paras);$("wdMsg").textContent="";$("wdStart").hidden=true;$("wdReview").hidden=false;
     const m=wdData.meta;$("wdCls").value=String(m.cls||nav.cls||10);$("wdChapterNew").value="";$("wdConceptNew").value="";
-    wdFill(0,{subject:m.subject||nav.subject,chapter:m.chapter||nav.chapter||""});wdRender()}
+    // a concept named in the file: find the chapter it already belongs to
+    let ch=m.chapter||"";const sub=subjNames(+$("wdCls").value).find(s=>sameName(s,m.subject||nav.subject))||"";
+    if(!ch&&m.concept&&sub){const hit=chapList(+$("wdCls").value,sub,true).find(c=>sameName(c.n,m.concept)||findItem(c.k,m.concept));if(hit){ch=hit.n;if(sameName(hit.n,m.concept))m.concept=""}}
+    if(!ch&&!m.concept)ch=nav.chapter||"";
+    wdFill(0,{subject:sub,chapter:ch,concept:m.concept||""});wdRender()}
   catch(err){$("wdMsg").textContent=err&&err.message==="nozip"?"The Word reader did not load. Check your internet and reopen the page.":"Could not read that file. Make sure it is a .docx Word file."}});
 $("wdGo").onclick=async()=>{const cls=+$("wdCls").value,subject=$("wdSubject").value,chapter=pickVal($("wdChapter"),$("wdChapterNew")),topCon=pickVal($("wdConcept"),$("wdConceptNew"));
   if(!subject){$("wdMsg").textContent="This class has no subjects. Add one in Admin → Syllabus.";return}
@@ -1064,13 +1093,12 @@ function qHTML(q,n){
   const mk=settings.marks?`<span class="mk">[${q.marks}]</span>`:"";
   // source & year: own line at the end of the question, right side, bold
   const st=settings.srcOn&&srcText(q)?`<div class="srcl">[${esc(srcText(q))}]</div>`:"";
-  const lines=k=>'<div class="ln"></div>'.repeat(k);
+  // no blank answer lines under written questions (removed on request)
   let b="";
   if(q.type==="MCQ")b=`<div class="s">${mk}${esc(q.text)}</div>`+optsHTML(q.opts)+st;
   else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${esc(q.text)}</div><div class="s ar"><b>Reason (R):</b> ${esc(q.reason)}</div>`+optsHTML(AR_OPTS)+st;
-  else if(q.type==="SA")b=`<div class="s">${mk}${esc(q.text)}</div>`+st+lines(4);
-  else if(q.type==="LA")b=`<div class="s">${mk}${esc(q.text)}</div>`+st+lines(9);
-  else if(q.type==="CS")b=`<div class="s">${mk}Read the passage and answer the questions that follow.</div><div class="case">${esc(q.case)}</div>`+q.text.split("\n").filter(Boolean).map(t=>`<div class="s">${esc(t)}</div>`).join("")+st+lines(5);
+  else if(q.type==="SA"||q.type==="LA")b=`<div class="s">${mk}${esc(q.text)}</div>`+st;
+  else if(q.type==="CS")b=`<div class="s">${mk}Read the passage and answer the questions that follow.</div><div class="case">${esc(q.case)}</div>`+q.text.split("\n").filter(Boolean).map(t=>`<div class="s">${esc(t)}</div>`).join("")+st;
   if(q.img){const im=`<div class="qimg"><img src="${q.img}" alt="" style="width:${q.imgW||70}%;aspect-ratio:${q.imgAR||1.5}"></div>`;
     const tmp=document.createElement("div");tmp.innerHTML=b;const kids=[...tmp.children];
     const after=q.type==="AR"?kids[1]:q.type==="CS"?kids[1]:kids[0];
