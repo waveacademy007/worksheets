@@ -10,7 +10,7 @@
 <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d4f8c'/%3E%3Cpath d='M18 18h28M18 30h28M18 42h18' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="app.css?v=1.8">
+<link rel="stylesheet" href="app.css?v=1.9">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -166,8 +166,17 @@
 
   <section class="view" id="v-set" hidden>
     <div class="profile-card">
-      <div class="avatar big" id="pfAvatar"></div>
+      <label class="avatar big pfpick" aria-label="Change your photo"><span id="pfAvatar" class="avin"></span><span class="cam"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span><input type="file" class="photoIn" accept="image/*"></label>
       <div><b id="pfName"></b><span id="pfEmail"></span><span id="pfPlan" class="pf-plan"></span></div>
+    </div>
+    <div class="panel photo-panel">
+      <h2>Your photo</h2>
+      <p class="note" id="phNote">Shows at the top right of the app.</p>
+      <div class="bar" style="margin:0;flex-wrap:wrap">
+        <span class="btn primary filebtn">Upload photo<input type="file" class="photoIn" accept="image/*" aria-label="Choose your photo"></span>
+        <button class="btn" id="phRemove">Remove photo</button>
+      </div>
+      <p class="note" id="phMsg" role="status"></p>
     </div>
     <div class="panel">
       <h2>Worksheet branding</h2>
@@ -296,9 +305,8 @@
 </main>
 
 <nav class="bottombar" aria-label="Main">
-  <button class="bb" data-go="home" id="bbHome"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z"/></svg><span>Home</span></button>
-  <button class="fab" data-go="ws" id="goWs" aria-label="Open worksheet"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg><span class="badge" id="tabCount">0</span></button>
-  <button class="bb" data-go="set" id="bbProfile"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 19.5c1.4-3.2 4-4.8 7-4.8s5.6 1.6 7 4.8"/></svg><span>Profile</span></button>
+  <button class="bb" data-go="home" id="bbHome"><span class="bbi"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z"/></svg></span><span>Home</span></button>
+  <button class="bb" data-go="ws" id="goWs"><span class="bbi"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg><span class="badge" id="tabCount">0</span></span><span>Worksheet</span></button>
 </nav>
 </div>
 
@@ -451,6 +459,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
-<script type="module" src="app.js?v=1.8"></script>
+<script type="module" src="app.js?v=1.9"></script>
 </body>
 </html>

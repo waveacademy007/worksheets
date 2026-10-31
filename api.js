@@ -32,7 +32,7 @@ async function firebaseApi() {
 
   return {
     mode: "firebase",
-    onAuth(cb) { A.onAuthStateChanged(auth, u => cb(u ? { uid: u.uid, email: u.email || "", name: u.displayName || "" } : null)); },
+    onAuth(cb) { A.onAuthStateChanged(auth, u => cb(u ? { uid: u.uid, email: u.email || "", name: u.displayName || "", photo: u.photoURL || "" } : null)); },
     signInGoogle() { return A.signInWithPopup(auth, new A.GoogleAuthProvider()); },
     signInEmail(e, p) { return A.signInWithEmailAndPassword(auth, e, p); },
     async signUpEmail(e, p, name) {

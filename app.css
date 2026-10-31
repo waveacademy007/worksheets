@@ -222,7 +222,7 @@ main#views{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-ins
 .dr-list .on{color:var(--gold)}
 
 /* bottom bar */
-.bottombar{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:1fr auto 1fr;align-items:end;
+.bottombar{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;align-items:end;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:6px calc(6px + env(safe-area-inset-bottom,0px));box-shadow:0 -4px 16px rgba(14,42,71,.06)}
 .bb{background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);font-weight:600;font-size:.82rem;padding:6px 0;cursor:pointer}
 .bb.on{color:var(--accent)}
@@ -431,3 +431,17 @@ div.snm{cursor:default}
 #dlgMsg{color:var(--warn);margin:0}
 #dlgMsg:empty{display:none}
 .wq .wdCon{grid-column:2;max-width:100%}
+
+/* ---- v1.9: two-tab bottom bar, teacher photo ---- */
+.bb{position:relative;padding:8px 0 6px;font-size:.84rem}
+.bb .bbi{position:relative;display:grid;place-items:center;width:58px;height:32px;border-radius:16px;transition:background .2s}
+.bb.on .bbi{background:var(--accent-soft)}
+.bb .badge{top:-7px;right:-4px;min-width:22px;height:22px;font-size:.74rem;background:var(--gold);color:var(--navy)}
+.avatar.ph img{object-fit:cover}
+.avatar.on{box-shadow:0 0 0 3px rgba(244,174,34,.45)}
+.avatar.pfpick{position:relative;cursor:pointer;overflow:visible}
+.pfpick .avin{width:100%;height:100%;border-radius:50%;overflow:hidden;display:grid;place-items:center}
+.pfpick .avin img{width:100%;height:100%;object-fit:cover}
+.pfpick .cam{position:absolute;right:-4px;bottom:-4px;width:26px;height:26px;border-radius:50%;background:var(--gold);color:var(--navy);display:grid;place-items:center;border:2px solid var(--navy)}
+.pfpick .cam .ic{width:15px;height:15px;stroke-width:2.2}
+.pfpick input,.photo-panel .filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}

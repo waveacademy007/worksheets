@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=1.8";
+import { createApi, DEMO } from "./api.js?v=1.9";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=1.8";
-import { SAMPLE } from "./sample-questions.js?v=1.8";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=1.8";
+import { TYPES, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=1.9";
+import { SAMPLE } from "./sample-questions.js?v=1.9";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=1.9";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "1.8";
+const APP_VERSION = "1.9";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -185,10 +185,37 @@ function planText() {
   return `Pro plan · active till ${fmtDate(profile.planUntil)}`;
 }
 function initials(s) { return (s || "?").split(/[\s@._]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join(""); }
+// Teacher's photo: the uploaded one, else the Google account photo, else initials.
+// settings.photo: "" = use Google photo if any, "none" = initials only, data URL = uploaded photo
+const photoSrc = () => settings.photo && settings.photo !== "none" ? settings.photo : settings.photo === "none" ? "" : (user.photo || "");
 function paintAvatars() {
-  const html = settings.logo ? `<img src="${settings.logo}" alt="">` : esc(initials(profile.name || user.name || user.email));
-  ["hdrAvatar", "drAvatar", "pfAvatar"].forEach(id => { $(id).innerHTML = html; });
+  const ini = esc(initials(settings.teacher || profile.name || user.name || user.email)), src = photoSrc();
+  ["hdrAvatar", "drAvatar", "pfAvatar"].forEach(id => {
+    const el = $(id); el.classList.toggle("ph", !!src);
+    if (!src) { el.innerHTML = ini; return; }
+    el.innerHTML = `<img src="${esc(src)}" alt="" referrerpolicy="no-referrer">`;
+    el.querySelector("img").onerror = () => { el.classList.remove("ph"); el.innerHTML = ini; };
+  });
+  $("phRemove").hidden = !src;
+  $("phNote").textContent = settings.photo && settings.photo !== "none" ? "Your photo shows at the top right of the app." : src ? "Showing your Google account photo. Upload another one if you like." : "No photo yet. Your initials are shown at the top right.";
 }
+// Pick a photo, crop the middle square, shrink to 256 px
+document.querySelectorAll(".photoIn").forEach(inp => inp.addEventListener("change", e => {
+  const f = e.target.files && e.target.files[0]; setTimeout(() => { e.target.value = ""; }, 0); if (!f) return;
+  if (f.type && !/^image\//.test(f.type)) { $("phMsg").textContent = "Please choose a photo (JPG or PNG)."; return; }
+  $("phMsg").textContent = "Preparing photo…";
+  const url = URL.createObjectURL(f), img = new Image();
+  img.onload = () => {
+    const S = Math.min(img.naturalWidth, img.naturalHeight), c = document.createElement("canvas"); c.width = c.height = 256;
+    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, 256, 256); x.imageSmoothingQuality = "high";
+    x.drawImage(img, (img.naturalWidth - S) / 2, (img.naturalHeight - S) / 2, S, S, 0, 0, 256, 256);
+    URL.revokeObjectURL(url); settings.photo = c.toDataURL("image/jpeg", 0.85); saveSet();
+    $("phMsg").textContent = ""; toast("Photo updated");
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); $("phMsg").textContent = "Could not open that photo. Try a JPG or PNG."; };
+  img.src = url;
+}));
+$("phRemove").onclick = () => { settings.photo = "none"; saveSet(); toast("Photo removed"); };
 
 // ================= Settings (saved to the account) =================
 let saveTimer;
@@ -220,7 +247,7 @@ function show(v, { push = true } = {}) {
   VIEWS.forEach(x => { $("v-" + x).hidden = x !== v; });
   curView = v; closeDrawer();
   $("bbHome").classList.toggle("on", ["home", "chapters", "bank"].includes(v));
-  $("bbProfile").classList.toggle("on", v === "set");
+  $("hdrAvatar").classList.toggle("on", v === "set");
   $("goWs").classList.toggle("on", v === "ws");
   document.querySelectorAll(".dr-list [data-go]").forEach(b => b.classList.toggle("on", b.dataset.go === v));
   if (push) history.pushState({ v }, "", "#" + v);
