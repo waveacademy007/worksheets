@@ -10,7 +10,7 @@
 <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d4f8c'/%3E%3Cpath d='M18 18h28M18 30h28M18 42h18' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="app.css?v=1.7">
+<link rel="stylesheet" href="app.css?v=1.8">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -115,6 +115,7 @@
       <select id="fSrc" aria-label="Source"></select>
       <input type="search" id="fSearch" placeholder="Search in this chapter" aria-label="Search">
     </div>
+    <div class="cchips" id="cChips" role="group" aria-label="Concepts" hidden></div>
     <div class="bar">
       <span class="grow" id="shownInfo"></span>
       <button class="btn" id="selAll">Tick all</button>
@@ -232,12 +233,20 @@
     </div>
   </section>
 
+  <section class="view" id="v-syl" hidden>
+    <div class="crumb"><button class="iconbtn" id="sylBack" aria-label="Back"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div><b id="sylTitle">Syllabus</b><span id="sylSub"></span></div></div>
+    <div class="segs" id="sylClass" role="tablist" aria-label="Class"></div>
+    <div class="slist" id="sylList"></div>
+    <div class="panel sadd" id="sylAdd"></div>
+  </section>
+
   <section class="view" id="v-admin" hidden>
     <div class="panel">
       <h2>Question bank</h2>
-      <p class="note">Questions you add here are visible to every active teacher.</p>
+      <p class="note">Questions you add here are visible to every active teacher. Use <b>Syllabus</b> to add, rename, reorder, hide or delete subjects, chapters and concepts.</p>
       <div class="bar" style="margin:0;flex-wrap:wrap">
         <button class="btn primary" id="addOpen">+ Add question</button>
+        <button class="btn" data-go="syl">Syllabus</button>
         <button class="btn" id="impOpen">Import from Excel</button>
         <button class="btn" id="wdOpen">Import from Word</button>
         <a class="btn" href="Question_Bank_Template.xlsx" download>Excel template</a>
@@ -319,6 +328,14 @@
 
 <div id="measure" aria-hidden="true"></div>
 
+<div class="modal" id="dlgModal" hidden role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+  <div class="mbox">
+    <div class="mhead"><h2 id="dlgTitle"></h2><button class="btn" id="dlgX" aria-label="Close">✕</button></div>
+    <div id="dlgBody" class="dlgbody"></div>
+    <p class="note" id="dlgMsg" role="status"></p>
+    <div class="dlgbtns" id="dlgBtns"></div>
+  </div>
+</div>
 <div class="modal" id="addModal" hidden role="dialog" aria-modal="true" aria-labelledby="addTitle">
   <div class="mbox wide">
     <div class="mhead"><h2 id="addTitle">Add a question</h2><button class="btn" id="addX" aria-label="Close">✕</button></div>
@@ -327,8 +344,9 @@
         <label class="f">Type<select id="aType"></select></label>
         <label class="f">Exams<input type="text" id="aExam" value="CBSE"></label>
         <label class="f">Class<select id="aClass"><option>9</option><option selected>10</option><option>11</option><option>12</option></select></label>
-        <label class="f">Subject<select id="aSubject"><option>Science</option><option>Maths</option><option>Physics</option><option>Chemistry</option><option>Biology</option></select></label>
-        <label class="f">Chapter<input type="text" id="aChapter" placeholder="e.g. Life Processes"></label>
+        <label class="f">Subject<select id="aSubject"></select></label>
+        <label class="f">Chapter<select id="aChapter"></select><input type="text" id="aChapterNew" placeholder="New chapter name" hidden></label>
+        <label class="f">Concept<select id="aConcept"></select><input type="text" id="aConceptNew" placeholder="New concept name" hidden></label>
         <label class="f">Marks<input type="text" id="aMarks" value="1"></label>
       </div>
       <label class="f" id="aCaseL" hidden>Case passage<textarea id="aCase"></textarea></label>
@@ -374,10 +392,11 @@
         <label class="f">Source (for questions without one)<select id="wdSrc"></select></label>
         <label class="f">Year<input type="text" id="wdYear" inputmode="numeric" maxlength="4" placeholder="e.g. 2023"></label>
         <label class="f">Class<select id="wdCls"><option>9</option><option>10</option><option>11</option><option>12</option></select></label>
-        <label class="f">Subject<select id="wdSubject"><option>Science</option><option>Maths</option><option>Physics</option><option>Chemistry</option><option>Biology</option></select></label>
-        <label class="f">Chapter<input type="text" id="wdChapter" placeholder="e.g. Human Heart"></label>
+        <label class="f">Subject<select id="wdSubject"></select></label>
+        <label class="f">Chapter<select id="wdChapter"></select><input type="text" id="wdChapterNew" placeholder="New chapter name" hidden></label>
+        <label class="f">Concept (for all)<select id="wdConcept"></select><input type="text" id="wdConceptNew" placeholder="New concept name" hidden></label>
       </div>
-      <p class="note">Check each question. Untick any you don't want and fix the type if it was guessed wrong. Rows marked in orange need a look.</p>
+      <p class="note">Check each question. Untick any you don't want and fix the type if it was guessed wrong. Each question can have its own concept. Rows marked in orange need a look.</p>
       <div id="wdList" class="wlist"></div>
       <div class="bar" style="margin:0"><button class="btn" id="wdBack">Choose another file</button><span class="grow"></span><button class="btn primary" id="wdGo">Import ticked questions</button></div>
     </div>
@@ -432,6 +451,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
-<script type="module" src="app.js?v=1.7"></script>
+<script type="module" src="app.js?v=1.8"></script>
 </body>
 </html>

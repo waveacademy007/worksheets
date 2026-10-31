@@ -1,14 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=1.7";
+import { createApi, DEMO } from "./api.js?v=1.8";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, AR_OPTS, SUBJECTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=1.7";
-import { SAMPLE } from "./sample-questions.js?v=1.7";
+import { TYPES, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=1.8";
+import { SAMPLE } from "./sample-questions.js?v=1.8";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=1.8";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "1.7";
+const APP_VERSION = "1.8";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -31,12 +32,25 @@ const DEFAULTS = { academy: "", teacher: "", phone: "", wm: "", logo: "", logoSi
 
 let api, user = null, profile = null;
 let settings = { ...DEFAULTS };          // branding + worksheet options, saved to the teacher's account
-let chapterMap = {};                     // "10|Science" -> [chapters]
+let chapterMap = {};                     // "10|Physics" -> [chapters that have questions]
+let syllabus = defaultSyllabus();        // subjects, chapters, concepts (see syllabus.js)
+let fConcept = "";                       // concept filter on the questions screen ("" all, "\u0000" none)
 let current = [];                        // questions of the chapter on screen
 let picked = new Map();                  // ticked questions (any chapter), kept on this device
 const imgCache = {};                     // question id -> diagram data URL
 let loadToken = 0;
 const curFont = () => FONTS[settings.font] || FONTS.garamond;
+const sameName = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+const subjList = (cls, all) => (syllabus.s[cls] || []).filter(x => all || !x.h);
+const chapList = (cls, subj, all) => (syllabus.c[cls + "|" + subj] || []).filter(x => all || !x.h);
+const conList = (cls, subj, ch, all) => ((findItem(syllabus.c[cls + "|" + subj], ch) || {}).k || []).filter(x => all || !x.h);
+async function loadSyllabus() {
+  let saved = null;
+  try { saved = await api.syllabus(); } catch (e) { saved = null; }
+  syllabus = mergeChapterMap(saved && saved.s ? JSON.parse(JSON.stringify(saved)) : defaultSyllabus(), chapterMap);
+  for (const c of CLASSES) syllabus.s[c] ??= [];
+}
+async function saveSyllabus() { await api.saveSyllabus(cleanSyllabus(syllabus)); }
 
 function fillSel(el, vals, allLabel) {
   el.innerHTML = (allLabel ? `<option value="">${esc(allLabel)}</option>` : "") +
@@ -147,6 +161,7 @@ async function startApp() {
   show("home", { push: false });
   try { chapterMap = await api.chapters(); }
   catch (e) { chapterMap = {}; toast("Could not load chapters. Check your internet."); }
+  await loadSyllabus();
   initHome();
   if (OFFLINE) backupReminder();
   checkForUpdate();
@@ -196,11 +211,11 @@ function fillSettingsUI() {
 }
 
 // ================= Navigation =================
-const VIEWS = ["home", "chapters", "bank", "ws", "saved", "drafts", "set", "refer", "feedback", "help", "admin"];
+const VIEWS = ["home", "chapters", "bank", "ws", "saved", "drafts", "set", "refer", "feedback", "help", "admin", "syl"];
 let curView = "home";
 const nav = { cls: 10, subject: "", chapter: "" };
 function show(v, { push = true } = {}) {
-  if (!VIEWS.includes(v) || (v === "admin" && !profile.admin)) v = "home";
+  if (!VIEWS.includes(v) || ((v === "admin" || v === "syl") && !profile.admin)) v = "home";
   if ((v === "chapters" && !nav.subject) || (v === "bank" && !nav.chapter)) v = "home";
   VIEWS.forEach(x => { $("v-" + x).hidden = x !== v; });
   curView = v; closeDrawer();
@@ -216,6 +231,7 @@ function show(v, { push = true } = {}) {
   if (v === "drafts") renderWorksheets("draft");
   if (v === "refer") renderRefer();
   if (v === "admin") { if (OFFLINE) renderBackup(); else { loadUsers(); loadFeedback(); } }
+  if (v === "syl") { if (!sylAt.subject) sylAt.cls = nav.cls || 10; renderSyl(); }
   scrollTo(0, 0);
 }
 addEventListener("popstate", e => {
@@ -258,9 +274,13 @@ function initHome() {
 $("fClass").onchange = () => { nav.cls = +$("fClass").value; nav.subject = ""; nav.chapter = ""; saveLast(); renderSubjects(true); };
 $("fExam").onchange = () => { saveLast(); if (curView === "bank") renderList(); };
 function saveLast() { store.set("ws_last", { cls: $("fClass").value, exam: $("fExam").value }); }
+// Subjects of a class in the admin's order. Teachers don't see hidden ones; the admin sees them marked.
+const visibleChapters = (cls, subj) => {
+  const has = new Set(chapterMap[cls + "|" + subj] || []);
+  return chapList(cls, subj, profile.admin).filter(c => has.has(c.n));
+};
 function subjectsFor(cls) {
-  const extra = Object.keys(chapterMap).filter(k => k.startsWith(cls + "|")).map(k => k.split("|")[1]).filter(s => !SUBJECTS.includes(s));
-  return [...SUBJECTS, ...extra].map(s => ({ name: s, n: (chapterMap[cls + "|" + s] || []).length }));
+  return subjList(cls, profile.admin).map(s => ({ name: s.n, hidden: !!s.h, n: visibleChapters(cls, s.n).length }));
 }
 function renderHome() { renderPro(); renderSubjects(false); }
 function renderPro() {
@@ -280,12 +300,12 @@ function renderSubjects() {
   const list = subjectsFor(nav.cls);
   $("subjGrid").innerHTML = list.map(s => {
     const ic = SUBJECT_ICONS[s.name] || SUBJECT_ICONS._;
-    return `<button class="subj${s.n ? "" : " empty"}" data-subj="${esc(s.name)}"><span class="disc" style="background:${ic.bg}"><svg class="sv" viewBox="0 0 48 48" aria-hidden="true">${ic.svg}</svg></span>${esc(s.name)}<small>${s.n ? s.n + " chapter" + (s.n === 1 ? "" : "s") : "Coming soon"}</small></button>`;
-  }).join("");
+    return `<button class="subj${s.n ? "" : " empty"}" data-subj="${esc(s.name)}"><span class="disc" style="background:${ic.bg}"><svg class="sv" viewBox="0 0 48 48" aria-hidden="true">${ic.svg}</svg></span>${esc(s.name)}<small>${s.hidden ? "Hidden · " : ""}${s.n ? s.n + " chapter" + (s.n === 1 ? "" : "s") : "Coming soon"}</small></button>`;
+  }).join("") || `<div class="empty">No subjects for this class yet.${profile.admin ? " Add them in Admin → Syllabus." : ""}</div>`;
 }
 $("subjGrid").addEventListener("click", e => {
   const b = e.target.closest("[data-subj]"); if (!b) return;
-  const n = (chapterMap[nav.cls + "|" + b.dataset.subj] || []).length;
+  const n = visibleChapters(nav.cls, b.dataset.subj).length;
   if (!n) { toast(profile.admin ? "No chapters yet. Add questions from Admin." : "Questions for this subject are coming soon."); return; }
   nav.subject = b.dataset.subj; nav.chapter = ""; show("chapters");
 });
@@ -293,15 +313,15 @@ $("subjGrid").addEventListener("click", e => {
 // ================= Chapters =================
 function renderChapters() {
   $("chTitle").textContent = nav.subject; $("chSub").textContent = `Class ${roman(nav.cls)} · choose a chapter`;
-  const chs = [...(chapterMap[nav.cls + "|" + nav.subject] || [])].sort((a, b) => a.localeCompare(b));
+  const chs = visibleChapters(nav.cls, nav.subject);
   const ticked = ch => [...picked.values()].filter(q => q.cls === nav.cls && q.subject === nav.subject && q.chapter === ch).length;
-  $("chList").innerHTML = chs.length ? chs.map((c, i) => { const t = ticked(c);
-    return `<button class="chap" data-ch="${esc(c)}"><span class="num">${i + 1}</span><span class="nm">${esc(c)}</span>${t ? `<span class="tk">${t} ticked</span>` : ""}<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>`; }).join("")
+  $("chList").innerHTML = chs.length ? chs.map((c, i) => { const t = ticked(c.n), k = (c.k || []).filter(x => profile.admin || !x.h).length;
+    return `<button class="chap" data-ch="${esc(c.n)}"><span class="num">${i + 1}</span><span class="nm">${esc(c.n)}${k || c.h ? `<small>${c.h ? "Hidden · " : ""}${k ? k + " concept" + (k === 1 ? "" : "s") : ""}</small>` : ""}</span>${t ? `<span class="tk">${t} ticked</span>` : ""}<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>`; }).join("")
     : `<div class="empty">No chapters yet.</div>`;
 }
 $("chList").addEventListener("click", e => {
   const b = e.target.closest("[data-ch]"); if (!b) return;
-  nav.chapter = b.dataset.ch; $("fType").value = ""; $("fSrc").value = ""; $("fSearch").value = "";
+  nav.chapter = b.dataset.ch; $("fType").value = ""; $("fSrc").value = ""; $("fSearch").value = ""; fConcept = "";
   show("bank"); loadQuestions();
 });
 
@@ -325,23 +345,46 @@ async function loadQuestions() {
   }
   renderList();
 }
+// Questions a teacher may see: not in a concept the admin has hidden
+function usable() {
+  if (profile.admin) return current;
+  const hid = new Set(conList(nav.cls, nav.subject, nav.chapter, true).filter(x => x.h).map(x => x.n.toLowerCase()));
+  return hid.size ? current.filter(q => !q.concept || !hid.has(q.concept.toLowerCase())) : current;
+}
+// Concept chips: syllabus order first, then any other concept found on the questions
+function renderConcepts() {
+  const qs = usable(), box = $("cChips");
+  const count = new Map(); let none = 0;
+  qs.forEach(q => { if (q.concept) { const k = q.concept.toLowerCase(); count.set(k, (count.get(k) || 0) + 1); } else none++; });
+  const names = [];
+  conList(nav.cls, nav.subject, nav.chapter, profile.admin).forEach(c => { if (count.has(c.n.toLowerCase())) names.push(c.n); });
+  qs.forEach(q => { if (q.concept && !names.some(n => sameName(n, q.concept))) names.push(q.concept); });
+  if (!names.length) { box.hidden = true; fConcept = ""; return; }
+  if (fConcept && fConcept !== "\u0000" && !names.some(n => sameName(n, fConcept))) fConcept = "";
+  const chip = (v, label, n) => `<button type="button" class="cchip${fConcept === v ? " on" : ""}" data-con="${esc(v)}">${esc(label)} <span>${n}</span></button>`;
+  box.innerHTML = chip("", "All", qs.length) + names.map(n => chip(n, n, count.get(n.toLowerCase()))).join("") + (none ? chip("\u0000", "No concept", none) : "");
+  box.hidden = false;
+}
+$("cChips").addEventListener("click", e => { const b = e.target.closest("[data-con]"); if (!b) return; fConcept = b.dataset.con; renderList(); });
 function shown() {
   const e = $("fExam").value, t = $("fType").value, sr = $("fSrc").value, w = $("fSearch").value.trim().toLowerCase();
-  return current.filter(q => (!e || (q.exam || []).includes(e)) && (!t || q.type === t) && (!sr || (q.src || []).some(x => x.s === sr)) &&
+  return usable().filter(q => (!e || (q.exam || []).includes(e)) && (!t || q.type === t) && (!sr || (q.src || []).some(x => x.s === sr)) &&
+    (!fConcept || (fConcept === "\u0000" ? !q.concept : sameName(q.concept, fConcept))) &&
     (!w || ((q.text || "") + " " + (q.case || "") + " " + (q.reason || "")).toLowerCase().includes(w)));
 }
 function renderList() {
   if (!nav.chapter) return;
-  const list = shown();
-  $("shownInfo").textContent = `${list.length} of ${current.length} questions`;
+  renderConcepts();
+  const list = shown(), total = usable().length;
+  $("shownInfo").textContent = `${list.length} of ${total} questions`;
   $("qlist").innerHTML = list.length ? list.map(q => `<label class="q ${picked.has(q.id) ? "on" : ""}" data-id="${esc(q.id)}">
     <input type="checkbox" ${picked.has(q.id) ? "checked" : ""} aria-label="Use this question">
-    <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span><span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}</div>
+    <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span>${q.concept && !fConcept ? `<span class="chip conchip">${esc(q.concept)}</span>` : ""}<span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}</div>
     ${q.case ? `<div class="opts">${esc(q.case)}</div>` : ""}<div>${esc(q.text).replace(/\n/g, "<br>")}</div>
     ${q.type === "AR" ? `<div class="opts">R: ${esc(q.reason)}</div>` : ""}
     ${q.type === "MCQ" ? `<div class="opts">${(q.opts || []).map((o, i) => "abcd"[i] + ") " + esc(o)).join(" &nbsp; ")}</div>` : ""}
     ${profile.admin ? `<button class="btn qdel" type="button" data-del="${esc(q.id)}">Delete</button>` : ""}</div></label>`).join("")
-    : `<div class="empty">${current.length ? "No questions match this filter." : "No questions in this chapter yet."}</div>`;
+    : `<div class="empty">${total ? "No questions match this filter." : "No questions in this chapter yet."}</div>`;
 }
 $("qlist").addEventListener("click", async e => {
   const del = e.target.closest("[data-del]");
@@ -381,7 +424,9 @@ async function saveToBank(list) {
   const withSeq = list.map((q, i) => ({ ...q, seq: base + i }));
   await api.addQuestions(withSeq, (d, t) => toast(`Saving ${d} of ${t}…`, 8000));
   if (OFFLINE) backupReminder();
+  if (addFromQuestions(syllabus, withSeq)) { try { await saveSyllabus(); } catch (e) { toast("Questions saved, but the syllabus could not be updated."); } }
   chapterMap = await api.chapters();
+  mergeChapterMap(syllabus, chapterMap);
   const f = withSeq[0];
   if (f) { nav.cls = f.cls; $("fClass").value = String(f.cls); saveLast(); }
   renderHome();
@@ -518,7 +563,31 @@ function addTypeUI(){const t=$("aType").value;$("aOpts").hidden=t!=="MCQ";$("aRe
   $("aTextLabel").textContent=t==="AR"?"Assertion (A)":t==="CS"?"Questions on the passage (one per line)":"Question";
   $("aMarks").value={MCQ:1,AR:1,SA:2,LA:5,CS:4}[t];}
 $("aType").onchange=addTypeUI;
-$("addOpen").onclick=()=>{$("addModal").hidden=false;$("aClass").value=String(nav.cls||10);$("aSubject").value=SUBJECTS.includes(nav.subject)?nav.subject:"Science";if(!$("aChapter").value)$("aChapter").value=nav.chapter||"";$("aErr").textContent="";addTypeUI();$("aText").focus()};
+// ---- Class → Subject → Chapter → Concept pickers (shared by Add question and Word import)
+const NEW="__new";
+function fillPick(sel,inp,names,{none,newLabel,keep}={}){
+  const prev=keep!==undefined?keep:sel.value;
+  sel.innerHTML=(none!==undefined?`<option value="">${esc(none)}</option>`:"")+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")+(newLabel?`<option value="${NEW}">${esc(newLabel)}</option>`:"");
+  const hit=names.find(n=>sameName(n,prev));
+  sel.value=hit!==undefined?hit:prev===NEW&&newLabel?NEW:none!==undefined?"":names.length?names[0]:(newLabel?NEW:"");
+  if(inp)inp.hidden=sel.value!==NEW;
+}
+const pickVal=(sel,inp)=>sel.value===NEW?inp.value.trim():sel.value;
+function subjNames(cls){return subjList(cls,true).map(x=>x.n)}
+function addFill(level,keep={}){
+  const cls=+$("aClass").value;
+  if(level<=0)fillPick($("aSubject"),null,subjNames(cls),{keep:keep.subject});
+  if(level<=1)fillPick($("aChapter"),$("aChapterNew"),chapList(cls,$("aSubject").value,true).map(x=>x.n),{newLabel:"+ New chapter…",keep:keep.chapter});
+  if(level<=2)fillPick($("aConcept"),$("aConceptNew"),$("aChapter").value===NEW?[]:conList(cls,$("aSubject").value,$("aChapter").value,true).map(x=>x.n),{none:"No concept",newLabel:"+ New concept…",keep:keep.concept});
+}
+$("aClass").onchange=()=>addFill(0);
+$("aSubject").onchange=()=>addFill(1);
+$("aChapter").onchange=()=>{$("aChapterNew").hidden=$("aChapter").value!==NEW;if(!$("aChapterNew").hidden)$("aChapterNew").focus();addFill(2)};
+$("aConcept").onchange=()=>{$("aConceptNew").hidden=$("aConcept").value!==NEW;if(!$("aConceptNew").hidden)$("aConceptNew").focus()};
+let addKeep=null;   // remember the last chapter/concept so several questions can be added in a row
+$("addOpen").onclick=()=>{$("addModal").hidden=false;
+  const k=addKeep&&(!nav.chapter||(addKeep.cls===nav.cls&&addKeep.subject===nav.subject&&addKeep.chapter===nav.chapter))?addKeep:{cls:nav.cls||10,subject:nav.subject,chapter:nav.chapter,concept:fConcept&&fConcept!=="\u0000"?fConcept:""};
+  $("aClass").value=String(k.cls||10);addFill(0,k);$("aErr").textContent="";addTypeUI();$("aText").focus()};
 $("addCancel").onclick=$("addX").onclick=()=>{$("addModal").hidden=true};
 $("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")$("addModal").hidden=true});
 
@@ -538,21 +607,25 @@ $("aImgIn").addEventListener("change",e=>{const f=e.target.files&&e.target.files
   img.onerror=()=>{URL.revokeObjectURL(url);$("aImgMsg").textContent="Could not open that image. Use JPG or PNG."};img.src=url});
 $("aImgDel").onclick=()=>{aImg=null;aImgUI()};
 $("addSave").onclick=async()=>{
-  const t=$("aType").value,text=$("aText").value.trim(),chapter=$("aChapter").value.trim();
+  const t=$("aType").value,text=$("aText").value.trim(),chapter=pickVal($("aChapter"),$("aChapterNew")),concept=pickVal($("aConcept"),$("aConceptNew"));
   const opts=[0,1,2,3].map(i=>$("aO"+i).value.trim());
   if(!text){$("aErr").textContent="Write the question first.";return}
-  if(!chapter){$("aErr").textContent="Add a chapter name so you can filter by it.";return}
+  if(!$("aSubject").value){$("aErr").textContent="This class has no subjects. Add one in Admin → Syllabus.";return}
+  if(!chapter){$("aErr").textContent="Choose a chapter, or type the new chapter's name.";return}
+  if($("aConcept").value===NEW&&!concept){$("aErr").textContent="Type the new concept's name, or choose No concept.";return}
   if(t==="MCQ"&&opts.some(o=>!o)){$("aErr").textContent="Fill all four options.";return}
   if(t==="AR"&&!$("aReason").value.trim()){$("aErr").textContent="Write the Reason (R).";return}
   const q={exam:$("aExam").value.split(/[ ,]+/).map(s=>s.trim().toUpperCase()).filter(Boolean),cls:+$("aClass").value,subject:$("aSubject").value,chapter,type:t,text,ans:$("aAns").value.trim(),marks:+$("aMarks").value||1};
   if(!q.exam.length)q.exam=["CBSE"];
   if(t==="MCQ")q.opts=opts; if(t==="AR"){q.opts=AR_OPTS;q.reason=$("aReason").value.trim()} if(t==="CS")q.case=$("aCase").value.trim();
+  if(concept)q.concept=concept;
   if(aImg){q.img=aImg.src;q.imgAR=aImg.ar;q.imgW=+$("aImgW").value}
   const qsrc=readSrcRows();if(qsrc.length)q.src=qsrc;
   $("addSave").disabled=true;$("aErr").textContent="Saving…";
   try{await saveToBank([q])}catch(err){$("aErr").textContent="Could not save. Check your internet and try again.";$("addSave").disabled=false;return}
   $("addSave").disabled=false;
-  ["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns"].forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;aImgUI();$("aErr").textContent="";$("addModal").hidden=true;
+  ["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns","aChapterNew","aConceptNew"].forEach(i=>$(i).value="");
+  addKeep={cls:q.cls,subject:q.subject,chapter:q.chapter,concept:q.concept||""};$("aSrcRows").innerHTML="";aImg=null;aImgUI();$("aErr").textContent="";$("addModal").hidden=true;
   toast("Question saved to the bank");
 };
 
@@ -561,17 +634,18 @@ $("addSave").onclick=async()=>{
 const TYPE_MAP={mcq:"MCQ",ar:"AR","assertion reason":"AR","assertion-reason":"AR",sa:"SA",short:"SA","short answer":"SA",la:"LA",long:"LA","long answer":"LA",cs:"CS","case study":"CS",case:"CS"};
 let imReady=[];
 const norm=h=>String(h||"").toLowerCase().replace(/\(.*?\)/g,"").replace(/[^a-z]/g,"");
-const COLS={source:"src",year:"year",exam:"exam",class:"cls",subject:"subject",chapter:"chapter",type:"type",question:"text",assertion:"text",reason:"reason",passage:"case",optiona:"o0",optionb:"o1",optionc:"o2",optiond:"o3",answer:"ans",marks:"marks",difficulty:"diff",image:"img",imagesize:"imgSize"};
+const COLS={concept:"concept",subtopic:"concept",source:"src",year:"year",exam:"exam",class:"cls",subject:"subject",chapter:"chapter",type:"type",question:"text",assertion:"text",reason:"reason",passage:"case",optiona:"o0",optionb:"o1",optionc:"o2",optiond:"o3",answer:"ans",marks:"marks",difficulty:"diff",image:"img",imagesize:"imgSize"};
 function imShow(step){$("imStart").hidden=step!=="start";$("imReview").hidden=step!=="review"}
 function parseTSV(t){const rows=[];let row=[],cur="",q=false;
   for(let i=0;i<t.length;i++){const c=t[i];
     if(q){if(c=='"'){if(t[i+1]=='"'){cur+='"';i++}else q=false}else cur+=c}
     else if(c=='"'&&cur==="")q=true;else if(c=="\t"){row.push(cur);cur=""}else if(c=="\n"||c=="\r"){if(c=="\r"&&t[i+1]=="\n")i++;row.push(cur);rows.push(row);row=[];cur=""}else cur+=c}
   if(cur!==""||row.length){row.push(cur);rows.push(row)}return rows.filter(r=>r.some(x=>String(x).trim()))}
+const SUBJ_ALIAS={math:"Maths",maths:"Maths",mathematics:"Maths",bio:"Biology",phy:"Physics",chem:"Chemistry"};
 function rowsToQuestions(rows,images){
-  const out=[],probs=[];if(!rows.length){probs.push("The sheet is empty.");return {out,probs}}
+  const out=[],probs=[];const newCh=new Set(),newCon=new Set();if(!rows.length){probs.push("The sheet is empty.");return {out,probs}}
   const head=rows[0].map(norm);const map=head.map(h=>COLS[h]);
-  if(!map.includes("text")||!map.includes("type")){probs.push("Header row not found. Keep the template's first row (Exam, Class, Subject, Chapter, Type, Question…).");return {out,probs}}
+  if(!map.includes("text")||!map.includes("type")){probs.push("Header row not found. Keep the template's first row (Exam, Class, Subject, Chapter, Concept, Type, Question…).");return {out,probs}}
   const isExample=r=>/^which vessel carries deoxygenated|^fishes have only two|^why is it necessary to separate|^draw a labelled diagram of a sectional|^\(i\) what do the two numbers|^in the circuit shown, what is the reading|^a ball is thrown vertically upward with speed 20/i.test(r.text||"");
   let skipped=0;
   rows.slice(1).forEach((r,ix)=>{const n=ix+2,v={};map.forEach((k,i)=>{if(k)v[k]=String(r[i]??"").trim()});
@@ -587,15 +661,23 @@ function rowsToQuestions(rows,images){
     if(type==="AR"){if(!v.reason)err.push("Reason is empty");ans=ans.toLowerCase();if(ans&&!/^[abcd]$/.test(ans))err.push("Answer should be a, b, c or d")}
     if(type==="CS"&&!v.case)err.push("Passage is empty");
     let img=null;if(v.img){img=images[v.img.toLowerCase()];if(!img)err.push(`Image "${v.img}" was not selected`)}
+    let subj=null,chapter=v.chapter,concept=v.concept||"";
+    if([9,10,11,12].includes(cls)){const subs=subjNames(cls);
+      subj=subs.find(x=>sameName(x,v.subject))||subs.find(x=>sameName(x,SUBJ_ALIAS[norm(v.subject)]));
+      if(!subj)err.push(v.subject?`Subject "${v.subject}" is not in Class ${roman(cls)} (use ${subs.join(", ")}, or add it in Admin → Syllabus)`:"Subject is empty")}
     if(err.length){probs.push(`Row ${n}: ${err.join("; ")}`);return}
-    const subj=SUBJECTS.find(x=>x.toLowerCase()===(v.subject||"").toLowerCase())||v.subject||"Science";
-    const q={id:"i"+Date.now().toString(36)+ix,exam:(v.exam||"CBSE").split(/[ ,\/]+/).map(x=>x.toUpperCase()).filter(Boolean),cls,subject:subj,chapter:v.chapter,type,text:v.text,ans,
+    const chItem=findItem(chapList(cls,subj,true),chapter);if(chItem)chapter=chItem.n;else newCh.add(cls+"|"+subj+"|"+chapter.toLowerCase());
+    if(concept){const co=chItem&&findItem(chItem.k,concept);if(co)concept=co.n;else newCon.add(cls+"|"+subj+"|"+chapter.toLowerCase()+"|"+concept.toLowerCase())}
+    const q={id:"i"+Date.now().toString(36)+ix,exam:(v.exam||"CBSE").split(/[ ,\/]+/).map(x=>x.toUpperCase()).filter(Boolean),cls,subject:subj,chapter,type,text:v.text,ans,
       marks:parseFloat(v.marks)||({MCQ:1,AR:1,SA:2,LA:5,CS:4}[type])};
     if(type==="MCQ")q.opts=[v.o0,v.o1,v.o2,v.o3];if(type==="AR"){q.opts=AR_OPTS;q.reason=v.reason}if(type==="CS")q.case=v.case;
     if(img){q.img=img.src;q.imgAR=img.ar;q.imgW={small:40,medium:70,full:100}[(v.imgSize||"medium").toLowerCase()]||70}
     const src=parseSources(v.src,v.year);if(src.length)q.src=src;
+    if(concept)q.concept=concept;
     out.push(q)});
-  return {out,probs,note:skipped?`${skipped} yellow example row${skipped>1?"s":""} from the template skipped.`:""};
+  const notes=[];if(skipped)notes.push(`${skipped} yellow example row${skipped>1?"s":""} from the template skipped.`);
+  if(newCh.size||newCon.size)notes.push(`New in the syllabus: ${[newCh.size?`${newCh.size} chapter${newCh.size>1?"s":""}`:"",newCon.size?`${newCon.size} concept${newCon.size>1?"s":""}`:""].filter(Boolean).join(" and ")}. They will be added when you import. If that is a spelling mistake, fix the sheet first.`);
+  return {out,probs,note:notes.join(" ")};
 }
 function shrinkImage(f){return new Promise(res=>{const url=URL.createObjectURL(f);const img=new Image();
   img.onload=()=>{const k=Math.min(1,900/Math.max(img.naturalWidth,img.naturalHeight));const c=document.createElement("canvas");c.width=Math.round(img.naturalWidth*k);c.height=Math.round(img.naturalHeight*k);
@@ -713,7 +795,7 @@ function parseWord(paras){
     if(!t&&!p.imgs.length)continue;
     if(!qs.length){const m1=t.match(/topic\s*[:\-–]\s*(.+)/i);if(m1)meta.chapter=m1[1].trim();
       const m2=t.match(/class\s*[:\-–]?\s*(XII|XI|IX|X|\d{1,2})\b/i);if(m2)meta.cls={IX:9,X:10,XI:11,XII:12}[m2[1].toUpperCase()]||parseInt(m2[1],10);
-      const m3=t.match(/\b(science|maths?|mathematics|physics|chemistry|biology)\b/i);if(m3)meta.subject=({math:"Maths",maths:"Maths",mathematics:"Maths"})[m3[1].toLowerCase()]||m3[1][0].toUpperCase()+m3[1].slice(1).toLowerCase()}
+      const m3=t.match(/\b(maths?|mathematics|physics|chemistry|biology)\b/i);if(m3)meta.subject=({math:"Maths",maths:"Maths",mathematics:"Maths"})[m3[1].toLowerCase()]||m3[1][0].toUpperCase()+m3[1].slice(1).toLowerCase()}
     if(/^(answer\s*key|answers|answer\s*sheet|solutions?)\s*[:\-]?\s*$/i.test(t)){inKey=true;continue}
     if(inKey){keyPairs(t);continue}
     // answer line inside a question
@@ -762,13 +844,23 @@ function parseWord(paras){
   return {meta,qs:res};
 }
 let wdData=null;
-function wdRender(){const {meta,qs}=wdData;
-  $("wdCls").value=String(meta.cls||10);$("wdSubject").value=meta.subject||"Science";$("wdChapter").value=meta.chapter||"";
+function wdFill(level,keep={}){
+  const cls=+$("wdCls").value;
+  if(level<=0)fillPick($("wdSubject"),null,subjNames(cls),{keep:keep.subject});
+  if(level<=1){const chs=chapList(cls,$("wdSubject").value,true).map(x=>x.n);
+    fillPick($("wdChapter"),$("wdChapterNew"),chs,{newLabel:"+ New chapter…",keep:keep.chapter!==undefined?(chs.some(c=>sameName(c,keep.chapter))||!keep.chapter?keep.chapter:NEW):undefined});
+    if(keep.chapter&&$("wdChapter").value===NEW)$("wdChapterNew").value=keep.chapter}
+  if(level<=2)fillPick($("wdConcept"),$("wdConceptNew"),wdConcepts(),{none:"No concept",newLabel:"+ New concept…"});
+}
+const wdConcepts=()=>$("wdChapter").value===NEW?[]:conList(+$("wdCls").value,$("wdSubject").value,$("wdChapter").value,true).map(x=>x.n);
+function wdRender(){const {qs}=wdData;
   const ok=qs.filter(q=>!q.issues.length).length;
   $("wdSummary").textContent=`${qs.length} question${qs.length===1?"":"s"} found · ${ok} look complete · ${qs.length-ok} need a check`;
+  const cons=wdConcepts();
   $("wdList").innerHTML=qs.map((q,i)=>`<div class="wq ${q.issues.length?"warn":""}">
     <label class="check"><input type="checkbox" data-i="${i}" class="wdUse" ${q.use?"checked":""}> <b>Q${q.n}</b></label>
     <select data-i="${i}" class="wdType" aria-label="Question type">${Object.entries(TYPES).map(([k,v])=>`<option value="${k}" ${k===q.type?"selected":""}>${v}</option>`).join("")}</select>
+    <select data-i="${i}" class="wdCon" aria-label="Concept for Q${q.n}"><option value="">Concept: same as above</option><option value="\u0000" ${q.concept==="\u0000"?"selected":""}>No concept</option>${cons.map(c=>`<option value="${esc(c)}" ${q.concept===c?"selected":""}>${esc(c)}</option>`).join("")}</select>
     <div class="wtxt">${q.passage?`<div class="opts">${esc(q.passage).slice(0,160)}…</div>`:""}${esc(q.type==="AR"?"A: "+q.text:q.text).replace(/\n/g,"<br>")}
       ${q.type==="AR"?`<div class="opts">R: ${esc(q.reason)}</div>`:""}
       ${q.type==="MCQ"?`<div class="opts">${q.opts.map((o,j)=>"abcd"[j]+") "+(o?esc(o):"<i>missing</i>")).join(" &nbsp; ")}</div>`:""}
@@ -776,22 +868,32 @@ function wdRender(){const {meta,qs}=wdData;
       <div class="opts">${q.src&&q.src.length?`<span class="chip srcchip">${esc(srcText(q))}</span> `:""}Answer: <b>${esc(q.ans||"–")}</b>${q.issues.length?` · <span style="color:var(--warn)">${esc(q.issues.join(", "))}</span>`:""}</div></div></div>`).join("")||`<div class="empty">No numbered questions were found. Questions should start with Q1., 1. or Word's own numbering.</div>`;
   $("wdGo").disabled=!qs.some(q=>q.use);
 }
+$("wdCls").onchange=()=>{wdFill(0);wdRender()};
+$("wdSubject").onchange=()=>{wdFill(1);wdRender()};
+$("wdChapter").onchange=()=>{$("wdChapterNew").hidden=$("wdChapter").value!==NEW;wdFill(2);wdData.qs.forEach(q=>{if(q.concept!=="\u0000")q.concept=""});wdRender()};
+$("wdConcept").onchange=()=>{$("wdConceptNew").hidden=$("wdConcept").value!==NEW};
 $("wdList").addEventListener("change",e=>{const i=+e.target.dataset.i;if(Number.isNaN(i))return;
   if(e.target.classList.contains("wdUse"))wdData.qs[i].use=e.target.checked;
   if(e.target.classList.contains("wdType")){wdData.qs[i].type=e.target.value;}
+  if(e.target.classList.contains("wdCon")){wdData.qs[i].concept=e.target.value;}
   $("wdGo").disabled=!wdData.qs.some(q=>q.use)});
 $("wdFile").addEventListener("change",async e=>{const f=e.target.files&&e.target.files[0];setTimeout(()=>{e.target.value=""},0);if(!f)return;
   if(/\.doc$/i.test(f.name)){$("wdMsg").textContent="This is an old .doc file. Open it in Word and use Save As → Word Document (.docx), then try again.";return}
   $("wdMsg").textContent="Reading Word file…";
-  try{const paras=await readDocx(f);wdData=parseWord(paras);$("wdMsg").textContent="";$("wdStart").hidden=true;$("wdReview").hidden=false;wdRender()}
+  try{const paras=await readDocx(f);wdData=parseWord(paras);$("wdMsg").textContent="";$("wdStart").hidden=true;$("wdReview").hidden=false;
+    const m=wdData.meta;$("wdCls").value=String(m.cls||nav.cls||10);$("wdChapterNew").value="";$("wdConceptNew").value="";
+    wdFill(0,{subject:m.subject||nav.subject,chapter:m.chapter||nav.chapter||""});wdRender()}
   catch(err){$("wdMsg").textContent=err&&err.message==="nozip"?"The Word reader did not load. Check your internet and reopen the page.":"Could not read that file. Make sure it is a .docx Word file."}});
-$("wdGo").onclick=async()=>{const cls=+$("wdCls").value,subject=$("wdSubject").value,chapter=$("wdChapter").value.trim()||"Imported";
+$("wdGo").onclick=async()=>{const cls=+$("wdCls").value,subject=$("wdSubject").value,chapter=pickVal($("wdChapter"),$("wdChapterNew")),topCon=pickVal($("wdConcept"),$("wdConceptNew"));
+  if(!subject){$("wdMsg").textContent="This class has no subjects. Add one in Admin → Syllabus.";return}
+  if(!chapter){$("wdMsg").textContent="Choose a chapter, or type the new chapter's name.";return}
   const exam=$("wdExam").value.split(/[ ,\/]+/).map(x=>x.toUpperCase()).filter(Boolean);
   const add=wdData.qs.filter(q=>q.use).map((q,k)=>{const o={exam:exam.length?exam:["CBSE"],cls,subject,chapter,type:q.type,text:q.text,ans:q.ans,marks:{MCQ:1,AR:1,SA:2,LA:5,CS:4}[q.type]};
     if(q.type==="MCQ")o.opts=q.opts.map(x=>x||"");if(q.type==="AR"){o.opts=AR_OPTS;o.reason=q.reason||""}if(q.type==="CS")o.case=q.passage||"";
     if(q.img){o.img=q.img.src;o.imgAR=q.img.ar;o.imgW=70}
     const common=$("wdSrc").value?[{s:$("wdSrc").value,y:/^(19|20)\d{2}$/.test($("wdYear").value.trim())?$("wdYear").value.trim():""}]:[];
-    const sr=q.src&&q.src.length?q.src:common;if(sr.length)o.src=sr;return o});
+    const sr=q.src&&q.src.length?q.src:common;if(sr.length)o.src=sr;
+    const con=q.concept==="\u0000"?"":q.concept||topCon;if(con)o.concept=con;return o});
   const b=$("wdGo");b.disabled=true;$("wdMsg").textContent="Saving to the question bank…";
   try{await saveToBank(add);$("wdModal").hidden=true;toast(`${add.length} question${add.length===1?"":"s"} imported from Word`)}
   catch(err){$("wdMsg").textContent="Could not save. Check your internet and try again."}finally{b.disabled=false}};
@@ -1063,12 +1165,214 @@ $("delGo").onclick = async () => {
     const n = await api.deleteQuestions(t, done => { $("delMsg").textContent = `Deleting… ${done} done`; });
     for (const [id, q] of [...picked]) if (!t || (q.cls === t.cls && q.subject === t.subject && q.chapter === t.chapter)) picked.delete(id);
     savePicked(); updateCounts(true);
-    chapterMap = await api.chapters(); if (t) { nav.chapter = ""; current = []; } else { nav.subject = ""; nav.chapter = ""; current = []; } renderHome();
+    chapterMap = await api.chapters(); mergeChapterMap(syllabus, chapterMap); if (t) { nav.chapter = ""; current = []; } else { nav.subject = ""; nav.chapter = ""; current = []; } renderHome();
     $("delBox").hidden = true;
     $("delMsg").textContent = `${n} question${n === 1 ? "" : "s"} deleted.`; toast(`${n} questions deleted`);
   } catch (e) { $("delMsg").textContent = "Could not delete. Check your internet and try again."; b.disabled = false; }
   finally { $("delCancel").disabled = false; }
 };
+
+// ================= Small dialog (instead of the browser's confirm/prompt) =================
+// ask({title, html, buttons:[{label, value, cls, word}]}) -> value of the tapped button, or null.
+// A button with `word` stays disabled until that word is typed in the box.
+let dlgDone = null;
+function ask({ title, html = "", buttons, onOpen }) {
+  if (dlgDone) dlgDone(null);
+  $("dlgTitle").textContent = title; $("dlgMsg").textContent = "";
+  const word = (buttons.find(b => b.word) || {}).word;
+  $("dlgBody").innerHTML = html + (word ? `<label class="f">Type ${esc(word)} to confirm<input type="text" id="dlgWord" autocomplete="off" autocapitalize="characters"></label>` : "");
+  $("dlgBtns").innerHTML = buttons.map((b, i) => `<button class="btn ${b.cls || ""}" data-i="${i}" ${b.word ? "disabled" : ""}>${esc(b.label)}</button>`).join("");
+  $("dlgModal").hidden = false;
+  if (word) $("dlgWord").addEventListener("input", () => { const ok = $("dlgWord").value.trim().toUpperCase() === word; $("dlgBtns").querySelectorAll("button").forEach((x, i) => { if (buttons[i].word) x.disabled = !ok; }); });
+  if (onOpen) onOpen();
+  const first = $("dlgBody").querySelector("input,select"); if (first) setTimeout(() => first.focus(), 50);
+  return new Promise(res => {
+    dlgDone = v => { dlgDone = null; $("dlgModal").hidden = true; res(v); };
+    $("dlgBtns").onclick = e => { const b = e.target.closest("[data-i]"); if (!b) return; const btn = buttons[+b.dataset.i]; if (btn.check) { const m = btn.check(); if (m) { $("dlgMsg").textContent = m; return; } } dlgDone(btn.value); };
+  });
+}
+$("dlgX").onclick = () => dlgDone && dlgDone(null);
+$("dlgModal").addEventListener("click", e => { if (e.target.id === "dlgModal" && dlgDone) dlgDone(null); });
+new MutationObserver(() => { if ($("dlgModal").hidden && dlgDone) dlgDone(null); }).observe($("dlgModal"), { attributes: true, attributeFilter: ["hidden"] });
+
+// ================= Admin: Syllabus (subjects → chapters → concepts) =================
+const sylAt = { cls: 10, subject: "", chapter: "" };     // where the admin is in the tree
+const ICON = {
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>', down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  ren: '<path d="M4 20h4L19 9l-4-4L4 16z"/>', move: '<path d="M4 12h14M13 6l6 6-6 6"/>',
+  hide: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  show: '<path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/>',
+  del: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'
+};
+const ib = (act, i, label, extra = "") => `<button class="sib ${extra}" data-act="${act}" data-i="${i}" aria-label="${esc(label)}" title="${esc(label)}"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICON[act]}</svg></button>`;
+const sylLevel = () => (sylAt.chapter ? 2 : sylAt.subject ? 1 : 0);
+function sylItems() {
+  const { cls, subject, chapter } = sylAt;
+  if (!subject) return (syllabus.s[cls] ??= []);
+  const list = (syllabus.c[cls + "|" + subject] ??= []);
+  if (!chapter) return list;
+  const ch = findItem(list, chapter); return ch ? (ch.k ??= []) : [];
+}
+const LEVEL_WORD = ["subject", "chapter", "concept"];
+function renderSyl() {
+  const L = sylLevel(), { cls, subject, chapter } = sylAt, items = sylItems();
+  $("sylTitle").textContent = L === 0 ? "Syllabus" : L === 1 ? subject : chapter;
+  $("sylSub").textContent = L === 0 ? "Subjects, chapters and concepts" : L === 1 ? `Class ${roman(cls)} · chapters` : `Class ${roman(cls)} · ${subject} · concepts`;
+  $("sylClass").hidden = L !== 0;
+  $("sylClass").innerHTML = CLASSES.map(c => `<button role="tab" class="seg${c === cls ? " on" : ""}" aria-selected="${c === cls}" data-cls="${c}">Class ${roman(c)}</button>`).join("");
+  const has = new Set(chapterMap[cls + "|" + subject] || []);
+  $("sylList").innerHTML = items.length ? items.map((x, i) => {
+    let meta = "";
+    if (L === 0) { const chs = syllabus.c[cls + "|" + x.n] || [], q = (chapterMap[cls + "|" + x.n] || []).length; meta = `${chs.length} chapter${chs.length === 1 ? "" : "s"}${q ? ` · ${q} with questions` : ""}`; }
+    if (L === 1) { const k = (x.k || []).length; meta = `${k ? k + " concept" + (k === 1 ? "" : "s") + " · " : ""}${has.has(x.n) ? "has questions" : "no questions yet"}`; }
+    const open = L < 2;
+    return `<div class="srow${x.h ? " hid" : ""}">
+      <${open ? "button" : "div"} class="snm" ${open ? `data-open="${i}"` : ""}><span class="sn">${i + 1}</span><span class="st"><b>${esc(x.n)}</b>${meta || x.h ? `<small>${x.h ? `<em>Hidden from teachers</em>${meta ? " · " : ""}` : ""}${esc(meta)}</small>` : ""}</span>${open ? `<svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>` : ""}</${open ? "button" : "div"}>
+      <div class="sacts">${ib("up", i, "Move up", i ? "" : "dim")}${ib("down", i, "Move down", i < items.length - 1 ? "" : "dim")}${ib("ren", i, "Rename")}${L === 1 ? ib("move", i, "Move or merge") : ""}${ib(x.h ? "show" : "hide", i, x.h ? "Show to teachers" : "Hide from teachers")}${ib("del", i, "Delete", "red")}</div>
+    </div>`;
+  }).join("") : `<div class="empty">No ${LEVEL_WORD[L]}s yet. Add one below.</div>`;
+  $("sylAdd").innerHTML = L === 0
+    ? `<h2>Add a subject</h2><label class="f">Subject name<input type="text" id="sylNew" placeholder="e.g. Science, English"></label>
+       <div class="f">Add it to<div class="clsticks">${CLASSES.map(c => `<label class="check"><input type="checkbox" class="sylCls" value="${c}" ${c === cls ? "checked" : ""}> Class ${roman(c)}</label>`).join("")}</div></div>
+       <div class="bar" style="margin:0"><span class="grow note" id="sylMsg"></span><button class="btn primary" id="sylAddGo">Add subject</button></div>`
+    : `<h2>Add ${LEVEL_WORD[L]}s</h2><label class="f">${L === 1 ? "Chapter" : "Concept"} names, one per line<textarea id="sylNew" placeholder="${L === 1 ? "e.g. Electricity" : "e.g. Ohm's Law\nResistors in Series"}" style="min-height:80px"></textarea></label>
+       <div class="bar" style="margin:0"><span class="grow note" id="sylMsg"></span><button class="btn primary" id="sylAddGo">Add</button></div>`;
+  $("sylAddGo").onclick = sylAdd;
+}
+$("sylClass").addEventListener("click", e => { const b = e.target.closest("[data-cls]"); if (!b) return; sylAt.cls = +b.dataset.cls; renderSyl(); });
+$("sylBack").onclick = () => { if (sylAt.chapter) sylAt.chapter = ""; else if (sylAt.subject) sylAt.subject = ""; else { history.back(); return; } renderSyl(); scrollTo(0, 0); };
+$("sylList").addEventListener("click", e => {
+  const o = e.target.closest("[data-open]");
+  if (o) { const x = sylItems()[+o.dataset.open]; if (sylLevel() === 0) sylAt.subject = x.n; else sylAt.chapter = x.n; renderSyl(); scrollTo(0, 0); return; }
+  const b = e.target.closest("[data-act]"); if (!b || b.classList.contains("dim")) return;
+  sylAction(b.dataset.act, +b.dataset.i);
+});
+async function sylSave(msg) {
+  try { await saveSyllabus(); if (msg) toast(msg); }
+  catch (e) { toast("Could not save the syllabus. Check your internet."); }
+  renderSyl(); renderHome();
+}
+async function sylAdd() {
+  const L = sylLevel(), raw = $("sylNew").value, msg = $("sylMsg");
+  const names = [...new Set(raw.split("\n").map(x => x.trim().replace(/\s+/g, " ")).filter(Boolean))];
+  if (!names.length) { msg.textContent = "Type a name first."; return; }
+  if (names.some(n => n.length > 120 || /[|]/.test(n))) { msg.textContent = "Names must be short and cannot contain the | sign."; return; }
+  if (L === 0) {
+    const classes = [...document.querySelectorAll(".sylCls:checked")].map(x => +x.value);
+    if (!classes.length) { msg.textContent = "Tick at least one class."; return; }
+    const added = [], skipped = [];
+    for (const c of classes) { const list = (syllabus.s[c] ??= []); if (findItem(list, names[0])) skipped.push(roman(c)); else { list.push({ n: names[0] }); syllabus.c[c + "|" + names[0]] ??= []; added.push(roman(c)); } }
+    if (!added.length) { msg.textContent = `${names[0]} is already in Class ${skipped.join(", ")}.`; return; }
+    await sylSave(`${names[0]} added to Class ${added.join(", ")}${skipped.length ? ` (already in ${skipped.join(", ")})` : ""}`);
+    return;
+  }
+  const list = sylItems(); let n = 0;
+  for (const nm of names) if (!findItem(list, nm)) { list.push(L === 1 ? { n: nm, k: [] } : { n: nm }); n++; }
+  if (!n) { msg.textContent = "Already in the list."; return; }
+  await sylSave(`${n} ${LEVEL_WORD[L]}${n === 1 ? "" : "s"} added`);
+}
+// Filter for the questions under item x at the current level
+function sylFilter(x) {
+  const { cls, subject, chapter } = sylAt, L = sylLevel();
+  return L === 0 ? { cls, subject: x.n } : L === 1 ? { cls, subject, chapter: x.n } : { cls, subject, chapter, concept: x.n };
+}
+// Keep ticked questions (on this phone) in step with renames / moves / deletes
+function patchPicked(f, patch) {
+  let ch = false;
+  for (const [id, q] of picked) if (Object.entries(f).every(([k, v]) => q[k] === v)) {
+    if (patch === null) picked.delete(id); else { for (const [k, v] of Object.entries(patch)) { if (v == null) delete q[k]; else q[k] = v; } }
+    ch = true;
+  }
+  if (ch) { savePicked(); updateCounts(false); }
+}
+async function refreshChapters() { chapterMap = await api.chapters(); mergeChapterMap(syllabus, chapterMap); nav.subject = ""; nav.chapter = ""; current = []; }
+async function busy(label, fn) {
+  toast(label, 60000);
+  try { await fn(); return true; }
+  catch (e) { toast("Could not finish. Check your internet and try again."); return false; }
+}
+async function sylAction(act, i) {
+  const L = sylLevel(), items = sylItems(), x = items[i], W = LEVEL_WORD[L], { cls, subject } = sylAt;
+  if (!x) return;
+  if (act === "up" || act === "down") { const j = act === "up" ? i - 1 : i + 1; if (j < 0 || j >= items.length) return; [items[i], items[j]] = [items[j], items[i]]; await sylSave(); return; }
+  if (act === "hide" || act === "show") { x.h = act === "hide" ? true : undefined; delete x.old; await sylSave(act === "hide" ? `${x.n} is hidden from teachers` : `${x.n} is visible to teachers`); return; }
+  if (act === "ren") {
+    const v = await ask({ title: `Rename ${W}`, html: `<label class="f">New name<input type="text" id="dlgName" value="${esc(x.n)}"></label>${L < 2 ? `<p class="note">Questions in this ${W} move to the new name automatically.</p>` : ""}`,
+      buttons: [{ label: "Cancel", value: null }, { label: "Rename", value: "ok", cls: "primary", check: () => { const n = $("dlgName").value.trim(); if (!n) return "Type a name."; if (/[|]/.test(n)) return "The | sign is not allowed."; if (items.some(y => y !== x && sameName(y.n, n))) return "That name is already in the list."; return ""; } }] });
+    if (v !== "ok") return;
+    const nn = $("dlgName").value.trim().replace(/\s+/g, " "); if (nn === x.n) return;
+    const f = sylFilter(x), field = ["subject", "chapter", "concept"][L];
+    const ok = await busy("Renaming…", async () => {
+      const n = await api.updateQuestions(f, { [field]: nn }, d => toast(`Renaming… ${d} questions updated`, 60000));
+      if (L === 0) { syllabus.c[cls + "|" + nn] = syllabus.c[cls + "|" + x.n] || []; delete syllabus.c[cls + "|" + x.n]; }
+      if (L < 2 && n) { const m = await api.chapters(); const k = cls + "|" + (L === 0 ? x.n : subject);
+        if (L === 0) { if (m[k]) { m[cls + "|" + nn] = m[k]; delete m[k]; } }
+        else m[k] = [...new Set((m[k] || []).map(c => c === x.n ? nn : c))];
+        await api.setChapterMap(m); }
+      patchPicked(f, { [field]: nn });
+      x.n = nn; delete x.old; await saveSyllabus(); await refreshChapters();
+      toast(`Renamed to ${nn}${n ? ` · ${n} question${n === 1 ? "" : "s"} updated` : ""}`);
+    });
+    renderSyl(); renderHome(); return;
+  }
+  if (act === "move") {
+    const subs = subjList(cls, true).map(s => s.n);
+    const chOpts = to => (syllabus.c[cls + "|" + to] || []).filter(c => !(to === subject && c === x)).map(c => c.n);
+    const v = await ask({ title: "Move or merge chapter", html: `<p style="margin:0">Move <b>${esc(x.n)}</b> with its concepts and questions to:</p>
+      <label class="f">Subject (Class ${roman(cls)})<select id="dlgSub">${subs.map(s => `<option ${s === subject ? "" : ""}>${esc(s)}</option>`).join("")}</select></label>
+      <label class="f">Chapter<select id="dlgCh"></select></label>
+      <label class="f" id="dlgConL">Put these questions under concept (optional)<input type="text" id="dlgCon" placeholder="e.g. Human Heart"></label>`,
+      buttons: [{ label: "Cancel", value: null }, { label: "Move", value: "ok", cls: "primary", check: () => $("dlgSub").value === subject && !$("dlgCh").value ? "Choose another subject, or a chapter to merge into." : "" }] , onOpen: () => {
+        const fill = () => { const to = $("dlgSub").value; $("dlgCh").innerHTML = `<option value="">Keep as its own chapter</option>` + chOpts(to).map(c => `<option value="${esc(c)}">Merge into: ${esc(c)}</option>`).join(""); $("dlgConL").hidden = true; };
+        $("dlgSub").onchange = fill; $("dlgCh").onchange = () => { $("dlgConL").hidden = !$("dlgCh").value; };
+        const other = subs.find(s => s !== subject); if (other) $("dlgSub").value = other; fill();
+      } });
+    if (v !== "ok") return;
+    const to = $("dlgSub").value, into = $("dlgCh").value, con = into ? $("dlgCon").value.trim().replace(/\s+/g, " ") : "", f = sylFilter(x);
+    const target = into || x.n;
+    await busy("Moving…", async () => {
+      const patch = { subject: to, chapter: target }; if (con) patch.concept = con;
+      const n = await api.updateQuestions(f, patch, d => toast(`Moving… ${d} questions`, 60000));
+      items.splice(items.indexOf(x), 1);
+      const dest = (syllabus.c[cls + "|" + to] ??= []), there = findItem(dest, target);
+      if (there) { there.k ??= []; for (const k of [...(x.k || []), ...(con ? [{ n: con }] : [])]) if (!findItem(there.k, k.n)) there.k.push(k); }
+      else dest.push({ ...x, k: [...(x.k || []), ...(con && !findItem(x.k, con) ? [{ n: con }] : [])] });
+      if (n) { const m = await api.chapters(), ka = cls + "|" + subject, kb = cls + "|" + to; m[ka] = (m[ka] || []).filter(c => c !== x.n); if (!m[ka].length) delete m[ka]; m[kb] = [...new Set([...(m[kb] || []), target])]; await api.setChapterMap(m); }
+      patchPicked(f, patch);
+      await saveSyllabus(); await refreshChapters();
+      toast(`${x.n} ${into ? `merged into ${into}` : "moved"}${to !== subject ? ` (${to})` : ""}${n ? ` · ${n} question${n === 1 ? "" : "s"}` : ""}`);
+    });
+    renderSyl(); renderHome(); return;
+  }
+  if (act === "del") {
+    const f = sylFilter(x); let n = 0;
+    toast("Checking questions…");
+    try { n = await api.countQuestions(f); } catch (e) { toast("Could not check. Check your internet."); return; }
+    $("toast").hidden = true;
+    const where = L === 0 ? `Class ${roman(cls)}` : L === 1 ? `${subject} (Class ${roman(cls)})` : `${sylAt.chapter}`;
+    const kids = L === 0 ? (syllabus.c[cls + "|" + x.n] || []).length : L === 1 ? (x.k || []).length : 0;
+    const kidTxt = kids ? ` Its ${kids} ${L === 0 ? "chapter" : "concept"}${kids === 1 ? "" : "s"} will be removed from the syllabus too.` : "";
+    let choice;
+    if (!n) choice = await ask({ title: `Delete ${W}?`, html: `<p style="margin:0">Delete <b>${esc(x.n)}</b> from ${esc(where)}? It has no questions.${kidTxt}</p>`,
+      buttons: [{ label: "Cancel", value: null }, { label: "Delete", value: "del", cls: "dangerbtn" }] });
+    else if (L === 2) choice = await ask({ title: "Delete concept?", html: `<p style="margin:0"><b>${n} question${n === 1 ? "" : "s"}</b> use the concept <b>${esc(x.n)}</b>. The questions will stay in the chapter, just without a concept.</p>`,
+      buttons: [{ label: "Cancel", value: null }, { label: "Remove concept", value: "unset", cls: "dangerbtn" }] });
+    else choice = await ask({ title: `Delete ${W}?`, html: `<p style="margin:0"><b>${esc(x.n)}</b> in ${esc(where)} has <b>${n} question${n === 1 ? "" : "s"}</b>.</p>
+        <p class="note" style="margin:8px 0 0"><b>Hide</b> keeps the questions safe; teachers just won't see this ${W}. You can show it again any time.<br><b>Delete everything</b> removes the ${W}${kids ? `, its ${kids} ${L === 0 ? "chapters" : "concepts"}` : ""} and all ${n} questions for ever.</p>`,
+      buttons: [{ label: "Cancel", value: null }, ...(x.h ? [] : [{ label: "Hide instead", value: "hide", cls: "primary" }]), { label: `Delete everything (${n})`, value: "all", cls: "dangerbtn", word: "DELETE" }] });
+    if (!choice) return;
+    if (choice === "hide") { x.h = true; delete x.old; await sylSave(`${x.n} is hidden from teachers`); return; }
+    await busy("Deleting…", async () => {
+      if (choice === "unset") { await api.updateQuestions(f, { concept: null }, d => toast(`Updating… ${d} questions`, 60000)); patchPicked(f, { concept: null }); }
+      if (choice === "all") { await api.deleteQuestions(f, d => toast(`Deleting… ${d} questions`, 60000)); patchPicked(f, null); }
+      items.splice(i, 1);
+      if (L === 0) delete syllabus.c[cls + "|" + x.n];
+      await saveSyllabus(); await refreshChapters();
+      toast(`${x.n} deleted${choice === "all" ? ` with ${n} question${n === 1 ? "" : "s"}` : ""}`);
+    });
+    renderSyl(); renderHome();
+  }
+}
 
 // ================= Admin: sample questions =================
 $("seedBtn").onclick = async () => {
@@ -1260,7 +1564,7 @@ async function makePpt(opts) {
     const x0 = PPT.W - RIGHT_PAD - w;
     pages.forEach((items, pi) => {
       const s = pptx.addSlide();
-      pptChrome(pptx, s, q.chapter, `Q ${n}${pi ? " (cont.)" : ""} / ${N}`, logo);
+      pptChrome(pptx, s, q.concept || q.chapter, `Q ${n}${pi ? " (cont.)" : ""} / ${N}`, logo);
       for (const it of items) {
         const x = x0 + it.x, y = BODY_TOP + it.y;
         if (it.k === "img") { s.addImage({ data: it.data, x, y, w: it.w, h: it.h }); continue; }
@@ -1412,7 +1716,7 @@ $("bkIn").addEventListener("change", async e => {
     const n = await api.importAll(JSON.parse(await f.text()));
     profile = await api.loadProfile(user);
     settings = { ...DEFAULTS, ...profile.branding }; fillSettingsUI(); logoUI();
-    chapterMap = await api.chapters(); renderHome();
+    chapterMap = await api.chapters(); await loadSyllabus(); renderHome();
     $("bkMsg").textContent = `Restored ${n} questions.`; renderBackup(); toast("Backup restored");
   } catch (err) { $("bkMsg").textContent = err instanceof SyntaxError ? "That file is not a backup file." : (err.message || "Could not restore."); }
 });

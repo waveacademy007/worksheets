@@ -6,7 +6,8 @@
 //   admins/{uid}     {}   <- create this document by hand in the console to make yourself admin
 //   questions/{id}   { exam[], cls, subject, chapter, type, text, opts[], reason, case, ans, marks, hasImg, imgAR, imgW, createdAt }
 //   qimages/{id}     { data }   <- diagram as a compressed data URL (free plan has no Cloud Storage)
-//   meta/chapters    { c: { "10|Science": ["Human Heart", ...] } }
+//   meta/chapters    { c: { "10|Physics": ["Electricity", ...] } }   <- chapters that have questions
+//   meta/syllabus    { s: {...subjects per class}, c: {...chapters + concepts} }  (see syllabus.js)
 import { firebaseConfig, MODE } from "./config.js";
 
 export const DEMO = !firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("PASTE") || new URLSearchParams(location.search).has("demo");
@@ -16,6 +17,7 @@ export async function createApi() { return MODE === "offline" ? localApi() : DEM
 // Firestore refuses `undefined`, so drop empty fields before saving
 const clean = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== ""));
 const key = (cls, subject) => cls + "|" + subject;
+const match = (q, f) => !f || Object.entries(f).every(([k, v]) => q[k] === v);
 
 async function firebaseApi() {
   const base = "https://www.gstatic.com/firebasejs/10.12.2/";
@@ -26,6 +28,7 @@ async function firebaseApi() {
   const auth = A.getAuth(app);
   const db = F.getFirestore(app);
   const toMs = t => (t && t.toMillis ? t.toMillis() : null);
+  const qWhere = f => F.query(F.collection(db, "questions"), ...Object.entries(f || {}).map(([k, v]) => F.where(k, "==", v)));
 
   return {
     mode: "firebase",
@@ -128,29 +131,44 @@ async function firebaseApi() {
       if (q.hasImg) b.delete(F.doc(db, "qimages", q.id));
       await b.commit();
     },
-    // Delete questions (+ their diagrams) in batches. chapterOnly = {cls, subject, chapter} or null for ALL.
-    async deleteQuestions(chapterOnly, onProgress) {
+    // Delete questions (+ their diagrams) in batches. filter = {cls, subject, chapter?, concept?} or null for ALL.
+    async deleteQuestions(filter, onProgress) {
       let total = 0;
-      for (;;) {
-        const base = F.collection(db, "questions");
-        const q = chapterOnly
-          ? F.query(base, F.where("cls", "==", chapterOnly.cls), F.where("subject", "==", chapterOnly.subject), F.where("chapter", "==", chapterOnly.chapter), F.limit(200))
-          : F.query(base, F.limit(200));
-        const r = await F.getDocs(q);
+      for (let guard = 0; guard < 2000; guard++) {
+        const r = await F.getDocs(F.query(qWhere(filter), F.limit(200)));
         if (r.empty) break;
         const b = F.writeBatch(db);
         r.docs.forEach(d => { b.delete(d.ref); if (d.data().hasImg) b.delete(F.doc(db, "qimages", d.id)); });
         await b.commit();
         total += r.size; onProgress && onProgress(total);
       }
-      if (chapterOnly) await F.setDoc(F.doc(db, "meta", "chapters"), { c: { [key(chapterOnly.cls, chapterOnly.subject)]: F.arrayRemove(chapterOnly.chapter) } }, { merge: true });
-      else {
+      const k = filter && key(filter.cls, filter.subject);
+      if (!filter) {
         // leftover diagrams without a question
         for (;;) { const r = await F.getDocs(F.query(F.collection(db, "qimages"), F.limit(200))); if (r.empty) break; const b = F.writeBatch(db); r.docs.forEach(d => b.delete(d.ref)); await b.commit(); }
         await F.deleteDoc(F.doc(db, "meta", "chapters"));
+      } else if (filter.concept) { /* chapter keeps its other questions */ }
+      else if (filter.chapter) await F.setDoc(F.doc(db, "meta", "chapters"), { c: { [k]: F.arrayRemove(filter.chapter) } }, { merge: true });
+      else await F.setDoc(F.doc(db, "meta", "chapters"), { c: { [k]: F.deleteField() } }, { merge: true });
+      return total;
+    },
+    async countQuestions(filter) { return (await F.getCountFromServer(qWhere(filter))).data().count; },
+    // Change a field on every matching question (rename / move). patch value null = remove the field.
+    async updateQuestions(filter, patch, onProgress) {
+      if (!Object.keys(patch).some(k => k in filter)) throw new Error("bad update");
+      const upd = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, v == null ? F.deleteField() : v]));
+      let total = 0;
+      for (let guard = 0; guard < 2000; guard++) {
+        const r = await F.getDocs(F.query(qWhere(filter), F.limit(300)));
+        if (r.empty) break;
+        const b = F.writeBatch(db); r.docs.forEach(d => b.update(d.ref, upd)); await b.commit();
+        total += r.size; onProgress && onProgress(total);
       }
       return total;
     },
+    setChapterMap(c) { return F.setDoc(F.doc(db, "meta", "chapters"), { c }); },
+    async syllabus() { const s = await F.getDoc(F.doc(db, "meta", "syllabus")); return s.exists() ? s.data() : null; },
+    saveSyllabus(syl) { return F.setDoc(F.doc(db, "meta", "syllabus"), syl); },
     async users() {
       const r = await F.getDocs(F.query(F.collection(db, "users"), F.orderBy("createdAt", "desc"), F.limit(1000)));
       const admins = new Set((await F.getDocs(F.collection(db, "admins"))).docs.map(d => d.id));
@@ -219,14 +237,23 @@ function demoApi() {
       return wait(list.length);
     },
     async deleteQuestion(q) { set("questions", get("questions", []).filter(x => x.id !== q.id)); const im = get("images", {}); delete im[q.id]; set("images", im); },
-    async deleteQuestions(only) {
+    async deleteQuestions(f) {
       const qs = get("questions", []), im = get("images", {}), ch = get("chapters", {});
-      const hit = q => !only || (q.cls === only.cls && q.subject === only.subject && q.chapter === only.chapter);
-      const gone = qs.filter(hit); gone.forEach(q => delete im[q.id]);
-      set("questions", qs.filter(q => !hit(q))); set("images", im);
-      if (only) { const k = key(only.cls, only.subject); ch[k] = (ch[k] || []).filter(c => c !== only.chapter); set("chapters", ch); } else set("chapters", {});
+      const gone = qs.filter(q => match(q, f)); gone.forEach(q => delete im[q.id]);
+      set("questions", qs.filter(q => !match(q, f))); set("images", im);
+      if (!f) set("chapters", {});
+      else if (!f.concept) { const k = key(f.cls, f.subject); if (f.chapter) ch[k] = (ch[k] || []).filter(c => c !== f.chapter); else delete ch[k]; set("chapters", ch); }
       return wait(gone.length);
     },
+    async countQuestions(f) { return wait(get("questions", []).filter(q => match(q, f)).length); },
+    async updateQuestions(f, patch) {
+      const qs = get("questions", []); let n = 0;
+      qs.forEach(q => { if (match(q, f)) { n++; for (const [k, v] of Object.entries(patch)) { if (v == null) delete q[k]; else q[k] = v; } } });
+      set("questions", qs); return wait(n);
+    },
+    async setChapterMap(c) { set("chapters", c); },
+    async syllabus() { return wait(get("syllabus", null)); },
+    async saveSyllabus(s) { set("syllabus", s); },
     async users() { return wait(Object.entries(get("users", {})).map(([uid, x]) => ({ uid, email: x.email, name: x.name, createdAt: x.createdAt, planUntil: x.planUntil, admin: !!x.admin, referredBy: x.referredBy || null, referralRewarded: !!x.referralRewarded })).sort((a, b) => b.createdAt - a.createdAt)); },
     async setPlan(uid, ms) { const us = get("users", {}); us[uid].planUntil = ms; set("users", us); }
   };
@@ -289,14 +316,23 @@ function localApi() {
       await tx(["questions", "images"], "readwrite", (qs, im) => { qs.delete(q.id); im.delete(q.id); });
       cache = (await all()).filter(x => x.id !== q.id); await touch();
     },
-    async deleteQuestions(only) {
+    async deleteQuestions(f) {
       const qs = await all();
-      const hit = q => !only || (q.cls === only.cls && q.subject === only.subject && q.chapter === only.chapter);
-      const gone = qs.filter(hit);
+      const gone = qs.filter(q => match(q, f));
       await tx(["questions", "images"], "readwrite", (s, im) => { gone.forEach(q => { s.delete(q.id); im.delete(q.id); }); });
-      cache = qs.filter(q => !hit(q)); await touch();
+      cache = qs.filter(q => !match(q, f)); await touch();
       return gone.length;
     },
+    async countQuestions(f) { return (await all()).filter(q => match(q, f)).length; },
+    async updateQuestions(f, patch) {
+      const hit = (await all()).filter(q => match(q, f));
+      hit.forEach(q => { for (const [k, v] of Object.entries(patch)) { if (v == null) delete q[k]; else q[k] = v; } });
+      await tx("questions", "readwrite", s => { hit.forEach(q => s.put(q)); }); await touch();
+      return hit.length;
+    },
+    async setChapterMap() {},
+    syllabus() { return kvGet("syllabus"); },
+    saveSyllabus(s) { return kvSet("syllabus", s); },
     async listWorksheets(kind) { const all = (await kvGet("worksheets")) || {}; return Object.entries(all).map(([id, w]) => ({ id, ...w })).filter(w => w.kind === kind).sort((a, b) => b.updatedAt - a.updatedAt); },
     async getWorksheet(id) { const all = (await kvGet("worksheets")) || {}; return all[id] ? { id, ...all[id] } : null; },
     async saveWorksheet(id, data) { const all = (await kvGet("worksheets")) || {}; id = id || "w" + Date.now().toString(36); all[id] = JSON.parse(JSON.stringify(data)); await kvSet("worksheets", all); return id; },
