@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=1.9";
+import { createApi, DEMO } from "./api.js?v=2.0";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=1.9";
-import { SAMPLE } from "./sample-questions.js?v=1.9";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=1.9";
+import { TYPES, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.0";
+import { SAMPLE } from "./sample-questions.js?v=2.0";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.0";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "1.9";
+const APP_VERSION = "2.0";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -410,10 +410,12 @@ function renderList() {
     ${q.case ? `<div class="opts">${esc(q.case)}</div>` : ""}<div>${esc(q.text).replace(/\n/g, "<br>")}</div>
     ${q.type === "AR" ? `<div class="opts">R: ${esc(q.reason)}</div>` : ""}
     ${q.type === "MCQ" ? `<div class="opts">${(q.opts || []).map((o, i) => "abcd"[i] + ") " + esc(o)).join(" &nbsp; ")}</div>` : ""}
-    ${profile.admin ? `<button class="btn qdel" type="button" data-del="${esc(q.id)}">Delete</button>` : ""}</div></label>`).join("")
+    ${profile.admin ? `<div class="qadm"><button class="btn qedit" type="button" data-edit="${esc(q.id)}">Edit</button><button class="btn qdel" type="button" data-del="${esc(q.id)}">Delete</button></div>` : ""}</div></label>`).join("")
     : `<div class="empty">${total ? "No questions match this filter." : "No questions in this chapter yet."}</div>`;
 }
 $("qlist").addEventListener("click", async e => {
+  const ed = e.target.closest("[data-edit]");
+  if (ed) { e.preventDefault(); const q = current.find(x => x.id === ed.dataset.edit); if (q) openEdit(q); return; }
   const del = e.target.closest("[data-del]");
   if (!del) return;
   e.preventDefault();
@@ -612,7 +614,11 @@ $("aSubject").onchange=()=>addFill(1);
 $("aChapter").onchange=()=>{$("aChapterNew").hidden=$("aChapter").value!==NEW;if(!$("aChapterNew").hidden)$("aChapterNew").focus();addFill(2)};
 $("aConcept").onchange=()=>{$("aConceptNew").hidden=$("aConcept").value!==NEW;if(!$("aConceptNew").hidden)$("aConceptNew").focus()};
 let addKeep=null;   // remember the last chapter/concept so several questions can be added in a row
-$("addOpen").onclick=()=>{$("addModal").hidden=false;
+let editing=null;   // the question being edited, or null when adding a new one
+const ADD_FIELDS=["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns","aChapterNew","aConceptNew"];
+function clearAddForm(){ADD_FIELDS.forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;aImgUI();$("aErr").textContent="";$("aImgMsg").textContent=""}
+function addMode(isEdit){$("addTitle").textContent=isEdit?"Edit question":"Add a question";$("addSave").textContent=isEdit?"Save changes":"Save question"}
+$("addOpen").onclick=()=>{if(editing){editing=null;clearAddForm();$("aExam").value="CBSE"}addMode(false);$("addModal").hidden=false;
   const k=addKeep&&(!nav.chapter||(addKeep.cls===nav.cls&&addKeep.subject===nav.subject&&addKeep.chapter===nav.chapter))?addKeep:{cls:nav.cls||10,subject:nav.subject,chapter:nav.chapter,concept:fConcept&&fConcept!=="\u0000"?fConcept:""};
   $("aClass").value=String(k.cls||10);addFill(0,k);$("aErr").textContent="";addTypeUI();$("aText").focus()};
 $("addCancel").onclick=$("addX").onclick=()=>{$("addModal").hidden=true};
@@ -633,6 +639,23 @@ $("aImgIn").addEventListener("change",e=>{const f=e.target.files&&e.target.files
     aImg={src:c.toDataURL("image/jpeg",0.88),ar:c.width/c.height};URL.revokeObjectURL(url);$("aImgMsg").textContent="";aImgUI();setTimeout(()=>{e.target.value=""},0)};
   img.onerror=()=>{URL.revokeObjectURL(url);$("aImgMsg").textContent="Could not open that image. Use JPG or PNG."};img.src=url});
 $("aImgDel").onclick=()=>{aImg=null;aImgUI()};
+// Open the form filled with an existing question
+async function openEdit(q){
+  editing=q;clearAddForm();addMode(true);
+  $("aType").value=q.type;addTypeUI();
+  $("aExam").value=(q.exam||[]).join(", ");$("aClass").value=String(q.cls);
+  addFill(0,{subject:q.subject,chapter:q.chapter,concept:q.concept||""});
+  $("aMarks").value=q.marks??"";$("aText").value=q.text||"";$("aReason").value=q.reason||"";$("aCase").value=q.case||"";$("aAns").value=q.ans||"";
+  if(q.type==="MCQ")(q.opts||[]).forEach((o,i)=>{if(i<4)$("aO"+i).value=o});
+  (q.src||[]).forEach(x=>srcRow(x.s,x.y));
+  $("aImgW").value=String(q.imgW||70);if(![...$("aImgW").options].some(o=>o.selected&&o.value===String(q.imgW||70)))$("aImgW").value="70";
+  $("addModal").hidden=false;
+  if(q.hasImg){$("aImgMsg").textContent="Loading diagram…";
+    try{if(!imgCache[q.id])Object.assign(imgCache,await api.images([q.id]));}catch(e){}
+    if(editing!==q)return;
+    if(imgCache[q.id]){aImg={src:imgCache[q.id],ar:q.imgAR||1.5,existing:true};$("aImgMsg").textContent=""}else $("aImgMsg").textContent="The diagram could not be loaded. Saving keeps the old one unless you remove or change it.";
+    aImgUI()}
+}
 $("addSave").onclick=async()=>{
   const t=$("aType").value,text=$("aText").value.trim(),chapter=pickVal($("aChapter"),$("aChapterNew")),concept=pickVal($("aConcept"),$("aConceptNew"));
   const opts=[0,1,2,3].map(i=>$("aO"+i).value.trim());
@@ -648,6 +671,7 @@ $("addSave").onclick=async()=>{
   if(concept)q.concept=concept;
   if(aImg){q.img=aImg.src;q.imgAR=aImg.ar;q.imgW=+$("aImgW").value}
   const qsrc=readSrcRows();if(qsrc.length)q.src=qsrc;
+  if(editing){await saveEdit(editing,q);return}
   $("addSave").disabled=true;$("aErr").textContent="Saving…";
   try{await saveToBank([q])}catch(err){$("aErr").textContent="Could not save. Check your internet and try again.";$("addSave").disabled=false;return}
   $("addSave").disabled=false;
@@ -657,6 +681,28 @@ $("addSave").onclick=async()=>{
 };
 
 
+
+// Save an edited question in place (same id, same position)
+async function saveEdit(old,q){
+  const imgMode=aImg?(aImg.existing?"keep":"new"):(old.hasImg&&!$("aImgMsg").textContent.startsWith("The diagram could not")?"remove":"keep");
+  const data={...q};delete data.img;
+  if(imgMode==="keep"&&old.hasImg&&!aImg){data.imgAR=old.imgAR;data.imgW=old.imgW}
+  data.seq=old.seq;
+  $("addSave").disabled=true;$("aErr").textContent="Saving changes…";
+  let saved;
+  try{saved=await api.updateQuestion(old.id,data,imgMode==="new"?q.img:imgMode);}
+  catch(err){$("aErr").textContent="Could not save. Check your internet and try again.";$("addSave").disabled=false;return}
+  $("addSave").disabled=false;
+  if(imgMode==="new")imgCache[old.id]=q.img;if(imgMode==="remove")delete imgCache[old.id];
+  if(addFromQuestions(syllabus,[saved])){try{await saveSyllabus()}catch(e){}}
+  try{chapterMap=await api.chapters();mergeChapterMap(syllabus,chapterMap)}catch(e){}
+  const i=current.findIndex(x=>x.id===old.id);
+  const here=saved.cls===nav.cls&&saved.subject===nav.subject&&saved.chapter===nav.chapter;
+  if(i>=0){if(here)current[i]=saved;else current.splice(i,1)}
+  if(picked.has(old.id)){picked.set(old.id,saved);savePicked()}
+  editing=null;clearAddForm();addMode(false);$("aExam").value="CBSE";$("addModal").hidden=true;
+  renderList();renderHome();toast(here?"Question updated":`Question updated and moved to ${saved.chapter}`);
+}
 // ===== Import from Excel / CSV / pasted rows =====
 const TYPE_MAP={mcq:"MCQ",ar:"AR","assertion reason":"AR","assertion-reason":"AR",sa:"SA",short:"SA","short answer":"SA",la:"LA",long:"LA","long answer":"LA",cs:"CS","case study":"CS",case:"CS"};
 let imReady=[];
@@ -1016,19 +1062,20 @@ function optsHTML(list){const one=(o,i)=>`<div class="o"><span class="l">${"abcd
   let h="";for(let i=0;i<list.length;i+=2)h+=`<div class="og">${list.slice(i,i+2).map((o,j)=>one(o,i+j)).join("")}</div>`;return h}
 function qHTML(q,n){
   const mk=settings.marks?`<span class="mk">[${q.marks}]</span>`:"";
-  const st=settings.srcOn&&srcText(q)?` <span class="srctag">[${esc(srcText(q))}]</span>`:"";
+  // source & year: own line at the end of the question, right side, bold
+  const st=settings.srcOn&&srcText(q)?`<div class="srcl">[${esc(srcText(q))}]</div>`:"";
   const lines=k=>'<div class="ln"></div>'.repeat(k);
   let b="";
-  if(q.type==="MCQ")b=`<div class="s">${mk}${esc(q.text)}${st}</div>`+optsHTML(q.opts);
-  else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${esc(q.text)}${st}</div><div class="s ar"><b>Reason (R):</b> ${esc(q.reason)}</div>`+optsHTML(AR_OPTS);
-  else if(q.type==="SA")b=`<div class="s">${mk}${esc(q.text)}${st}</div>`+lines(4);
-  else if(q.type==="LA")b=`<div class="s">${mk}${esc(q.text)}${st}</div>`+lines(9);
-  else if(q.type==="CS")b=`<div class="s">${mk}Read the passage and answer the questions that follow.${st}</div><div class="case">${esc(q.case)}</div>`+q.text.split("\n").filter(Boolean).map(t=>`<div class="s">${esc(t)}</div>`).join("")+lines(5);
+  if(q.type==="MCQ")b=`<div class="s">${mk}${esc(q.text)}</div>`+optsHTML(q.opts)+st;
+  else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${esc(q.text)}</div><div class="s ar"><b>Reason (R):</b> ${esc(q.reason)}</div>`+optsHTML(AR_OPTS)+st;
+  else if(q.type==="SA")b=`<div class="s">${mk}${esc(q.text)}</div>`+st+lines(4);
+  else if(q.type==="LA")b=`<div class="s">${mk}${esc(q.text)}</div>`+st+lines(9);
+  else if(q.type==="CS")b=`<div class="s">${mk}Read the passage and answer the questions that follow.</div><div class="case">${esc(q.case)}</div>`+q.text.split("\n").filter(Boolean).map(t=>`<div class="s">${esc(t)}</div>`).join("")+st+lines(5);
   if(q.img){const im=`<div class="qimg"><img src="${q.img}" alt="" style="width:${q.imgW||70}%;aspect-ratio:${q.imgAR||1.5}"></div>`;
     const tmp=document.createElement("div");tmp.innerHTML=b;const kids=[...tmp.children];
     const after=q.type==="AR"?kids[1]:q.type==="CS"?kids[1]:kids[0];
     if(after)after.insertAdjacentHTML("afterend",im);b=tmp.innerHTML}
-  const d=document.createElement("div");d.className="ws-q";d.innerHTML=`<span class="n">Q${n}.</span><div class="qc">${b}</div>`;return d;
+  const d=document.createElement("div");d.className="ws-q";d.innerHTML=`<span class="n ring">Q${n}</span><div class="qc">${b}</div>`;return d;
 }
 // Split question q so that everything above `limit` (px) stays; returns the continuation question, or null if nothing fits.
 function splitQ(q,limit){
@@ -1047,7 +1094,7 @@ function splitQ(q,limit){
       cont.appendChild(frag);b.classList.add("brk");cont.classList.add("cont")}
   }
   if(!cont&&i===0)return null;
-  const rq=document.createElement("div");rq.className="ws-q";rq.innerHTML='<span class="n"></span><div class="qc"></div>';
+  const rq=document.createElement("div");rq.className="ws-q";rq.innerHTML='<span class="n"></span><div class="qc"></div>';  // continuation: no number
   const rqc=rq.querySelector(".qc");if(cont)rqc.appendChild(cont);
   blocks.slice(cont?i+1:i).forEach(x=>rqc.appendChild(x));
   return rq;
@@ -1437,7 +1484,7 @@ $("sharePdf").hidden = !canShareFiles;
 // Slide: 13.333 x 7.5 in. Black header + gold line, dark green body, black footer.
 // The question sits in the right 30% (left 70% stays empty for the teacher).
 // Too long? Try 50% width; still too long? Continue on the next slide.
-const PPT = { W: 13.333, H: 7.5, HDR: 0.95, FTR: 0.55, GREEN: "14532D", BLACK: "0B0B0B", GOLD: "F4AE22", WHITE: "FFFFFF", PASSAGE: "DCEFE2" };
+const PPT = { W: 13.333, H: 7.5, HDR: 0.7, FTR: 0.55, GREEN: "14532D", BLACK: "0B0B0B", GOLD: "F4AE22", WHITE: "FFFFFF", PASSAGE: "DCEFE2" };
 const BODY_TOP = PPT.HDR + 0.04 + 0.25, BODY_BOTTOM = PPT.H - PPT.FTR - 0.2, BODY_H = BODY_BOTTOM - BODY_TOP, RIGHT_PAD = 0.32;
 let mctxP;
 function measureIn(text, pt, bold) {
@@ -1475,22 +1522,22 @@ async function toPng(src) {
 function pptBlocks(q, n, imgPng) {
   const B = [];
   const T = (text, o = {}) => B.push({ k: "text", text, ...o });
-  const tag = settings.srcOn && srcText(q) ? ` [${srcText(q)}]` : "";
-  const tg = tag ? { tag } : {};
-  if (q.type === "AR") { T(q.text + tag, { label: `Q${n}.`, pre: "Assertion (A): ", ...tg }); T(q.reason || "", { pre: "Reason (R): " }); }
-  else if (q.type === "CS") { T("Read the passage and answer the questions that follow." + tag, { label: `Q${n}.`, ...tg }); T(q.case || "", { passage: true }); }
-  else T(q.text + tag, { label: `Q${n}.`, ...tg });
+  if (q.type === "AR") { T(q.text, { label: `Q${n}`, pre: "Assertion (A): " }); T(q.reason || "", { pre: "Reason (R): " }); }
+  else if (q.type === "CS") { T("Read the passage and answer the questions that follow.", { label: `Q${n}` }); T(q.case || "", { passage: true }); }
+  else T(q.text, { label: `Q${n}` });
   if (imgPng) B.push({ k: "img", ...imgPng });
   if (q.type === "CS") (q.text || "").split("\n").filter(Boolean).forEach(t => T(t));
   if (q.type === "MCQ" || q.type === "AR") {
     const opts = q.type === "AR" ? AR_OPTS : (q.opts || []);
     opts.forEach((o, i) => B.push({ k: "opt", label: "abcd"[i] + ")", text: o || "", optIndex: i, optCount: opts.length, all: opts }));
   }
+  // source & year: last line, right side, bold gold
+  if (settings.srcOn && srcText(q)) B.push({ k: "src", text: `[${srcText(q)}]` });
   return B;
 }
 // Lay blocks out in a column of width w at font pt. Returns pages of placed pieces.
 function layoutBlocks(blocks, w, pt, allowSplit) {
-  const IND = Math.max(0.62 * pt / 24, measureIn("Q88.", pt, true) + 0.1), GAP = 0.13, OIND = IND, LAB = 0.4 * pt / 24;
+  const IND = ringD(pt) + 0.14, GAP = 0.13, OIND = IND, LAB = 0.4 * pt / 24;
   const pages = [[]]; let y = 0;
   const newPage = () => { pages.push([]); y = 0; };
   const room = () => BODY_H - y;
@@ -1503,6 +1550,11 @@ function layoutBlocks(blocks, w, pt, allowSplit) {
       const maxH = Math.min(2.3, BODY_H * 0.45); if (ih > maxH) { ih = maxH; iw = ih * b.ar; }
       if (ih > room()) { if (!allowSplit) return null; newPage(); }
       pages[pages.length - 1].push({ k: "img", x: IND, y, w: iw, h: ih, data: b.data }); y += ih + GAP; continue;
+    }
+    if (b.k === "src") {
+      const lines = wrapLines(b.text, pt, w - IND), hh = lines.length * lineH(pt);
+      if (hh > room()) { if (!allowSplit) return null; newPage(); }
+      pages[pages.length - 1].push({ k: "src", x: IND, y: y + 0.02, w: w - IND, h: hh, lines }); y += hh + GAP; continue;
     }
     if (b.k === "opt") {
       if (two) {
@@ -1536,6 +1588,8 @@ function layoutBlocks(blocks, w, pt, allowSplit) {
   }
   return pages.filter(p => p.length);
 }
+// Gold ring around "Q12": diameter grows a little with the font size
+const ringD = pt => Math.max(0.5, lineH(pt) * 1.18);
 function fitQuestion(blocks) {
   const W = PPT.W;
   for (const pt of [24, 22, 20, 18]) { const p = layoutBlocks(blocks, W * 0.30 - RIGHT_PAD, pt, false); if (p && p.length === 1) return { pages: p, pt, w: W * 0.30 - RIGHT_PAD }; }
@@ -1548,9 +1602,10 @@ function pptChrome(pptx, slide, title, right, logo) {
   slide.addShape("rect", { x: 0, y: PPT.HDR, w: PPT.W, h: 0.04, fill: { color: PPT.GOLD }, line: { color: PPT.GOLD } });
   let tx = 0.35;
   if (logo) {
-    slide.addShape("ellipse", { x: 0.3, y: 0.12, w: 0.71, h: 0.71, fill: { color: PPT.WHITE }, line: { color: PPT.WHITE } });
-    const lw = 0.48, lh = lw / Math.max(logo.ar, 1), lw2 = lh * logo.ar;
-    slide.addImage({ data: logo.data, x: 0.3 + (0.71 - lw2) / 2, y: 0.12 + (0.71 - lh) / 2, w: lw2, h: lh });
+    const ly = (PPT.HDR - 0.71) / 2 + 0.02;      // same size as before; bar is thinner, so it sits like a badge
+    slide.addShape("ellipse", { x: 0.3, y: ly, w: 0.71, h: 0.71, fill: { color: PPT.WHITE }, line: { color: PPT.GOLD, width: 2.25 } });
+    const lw = 0.5, lh = lw / Math.max(logo.ar, 1), lw2 = lh * logo.ar;
+    slide.addImage({ data: logo.data, x: 0.3 + (0.71 - lw2) / 2, y: ly + (0.71 - lh) / 2, w: lw2, h: lh });
     tx = 1.2;
   }
   slide.addText(title || "", { x: tx, y: 0, w: PPT.W - tx - 2.6, h: PPT.HDR, fontFace: "Calibri", fontSize: 26, bold: true, color: PPT.WHITE, valign: "middle", margin: 0, fit: "shrink" });
@@ -1595,17 +1650,20 @@ async function makePpt(opts) {
       for (const it of items) {
         const x = x0 + it.x, y = BODY_TOP + it.y;
         if (it.k === "img") { s.addImage({ data: it.data, x, y, w: it.w, h: it.h }); continue; }
+        if (it.k === "src") { s.addText(it.lines.join(" "), { x, y, w: it.w, h: it.h, fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, align: "right", valign: "top", margin: 0 }); continue; }
         if (it.k === "opt") {
           s.addText(it.label, { x, y, w: it.lab, h: it.lines.length * lineH(pt), fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, valign: "top", margin: 0 });
           s.addText(it.lines.join(" "), { x: x + it.lab, y, w: it.w - it.lab, h: it.lines.length * lineH(pt), fontFace: "Calibri", fontSize: pt, color: PPT.WHITE, align: "justify", valign: "top", margin: 0, lineSpacingMultiple: 1.1 });
           continue;
         }
-        if (it.label) s.addText(it.label, { x: x0, y, w: it.x, h: lineH(pt), fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, valign: "top", margin: 0 });
+        if (it.label) {
+          const d = ringD(pt), ry = y + lineH(pt) / 2 - d / 2 + 0.02;
+          s.addShape("ellipse", { x: x0, y: ry, w: d, h: d, fill: { type: "none" }, line: { color: PPT.GOLD, width: 2.25 } });
+          s.addText(it.label, { x: x0 - 0.05, y: ry, w: d + 0.1, h: d, fontFace: "Calibri", fontSize: Math.round(pt * (it.label.length > 3 ? 0.56 : 0.66)), bold: true, color: PPT.GOLD, align: "center", valign: "middle", margin: 0 });
+        }
         let body = it.lines.join(" "); const runs = [];
         if (it.pre && body.startsWith(it.pre)) { runs.push({ text: it.pre, options: { bold: true, color: PPT.GOLD } }); body = body.slice(it.pre.length); }
-        const tg = it.last && it.tag && body.endsWith(it.tag.trim()) ? it.tag.trim() : "";
-        if (tg) { runs.push({ text: body.slice(0, body.length - tg.length), options: {} }); runs.push({ text: tg, options: { bold: true, color: PPT.GOLD } }); }
-        else runs.push({ text: body, options: {} });
+        runs.push({ text: body, options: {} });
         if (it.passage) s.addShape("rect", { x, y, w: 0.05, h: it.h, fill: { color: PPT.GOLD }, line: { color: PPT.GOLD } });
         s.addText(runs, { x: it.passage ? x + 0.16 : x, y, w: it.passage ? it.w - 0.16 : it.w, h: it.h, fontFace: "Calibri", fontSize: pt, color: it.passage ? PPT.PASSAGE : PPT.WHITE, align: "justify", valign: "top", margin: 0, lineSpacingMultiple: 1.1 });
         if (!it.last && pages.length > 1 && it === items[items.length - 1]) s.addText("Continued on next slide →", { x, y: BODY_BOTTOM - 0.3, w: it.w, h: 0.3, fontFace: "Calibri", fontSize: 13, bold: true, color: PPT.GOLD, margin: 0 });

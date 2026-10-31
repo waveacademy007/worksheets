@@ -152,6 +152,27 @@ async function firebaseApi() {
       else await F.setDoc(F.doc(db, "meta", "chapters"), { c: { [k]: F.deleteField() } }, { merge: true });
       return total;
     },
+    // Replace a question's content, keeping its id. img: "keep" | "remove" | data URL
+    async updateQuestion(id, q, img) {
+      const ref = F.doc(db, "questions", id), snap = await F.getDoc(ref);
+      if (!snap.exists()) throw new Error("gone");
+      const old = snap.data();
+      const hasImg = img === "remove" ? false : img === "keep" ? !!old.hasImg : true;
+      const data = { ...clean(q), hasImg, updatedAt: F.serverTimestamp() };
+      for (const k of Object.keys(old)) if (!(k in data) && !["createdAt", "seq"].includes(k)) data[k] = F.deleteField();
+      if (!hasImg) { data.imgAR = F.deleteField(); data.imgW = F.deleteField(); }
+      const b = F.writeBatch(db);
+      b.set(ref, data, { merge: true });
+      if (img === "remove") b.delete(F.doc(db, "qimages", id));
+      else if (img !== "keep") b.set(F.doc(db, "qimages", id), { data: img });
+      await b.commit();
+      if (old.cls !== q.cls || old.subject !== q.subject || old.chapter !== q.chapter) {
+        await F.setDoc(F.doc(db, "meta", "chapters"), { c: { [key(q.cls, q.subject)]: F.arrayUnion(q.chapter) } }, { merge: true });
+        const left = (await F.getCountFromServer(qWhere({ cls: old.cls, subject: old.subject, chapter: old.chapter }))).data().count;
+        if (!left) await F.setDoc(F.doc(db, "meta", "chapters"), { c: { [key(old.cls, old.subject)]: F.arrayRemove(old.chapter) } }, { merge: true });
+      }
+      const out = { ...clean(q), id, hasImg }; if (!hasImg) { delete out.imgAR; delete out.imgW; } return out;
+    },
     async countQuestions(filter) { return (await F.getCountFromServer(qWhere(filter))).data().count; },
     // Change a field on every matching question (rename / move). patch value null = remove the field.
     async updateQuestions(filter, patch, onProgress) {
@@ -245,6 +266,17 @@ function demoApi() {
       else if (!f.concept) { const k = key(f.cls, f.subject); if (f.chapter) ch[k] = (ch[k] || []).filter(c => c !== f.chapter); else delete ch[k]; set("chapters", ch); }
       return wait(gone.length);
     },
+    async updateQuestion(id, q, img) {
+      const qs = get("questions", []), im = get("images", {}), ch = get("chapters", {});
+      const i = qs.findIndex(x => x.id === id); if (i < 0) throw new Error("gone");
+      const old = qs[i], hasImg = img === "remove" ? false : img === "keep" ? !!old.hasImg : true;
+      const doc = { ...clean(q), id, hasImg }; if (!hasImg) { delete doc.imgAR; delete doc.imgW; }
+      qs[i] = doc; if (img === "remove") delete im[id]; else if (img !== "keep") im[id] = img;
+      const k = key(q.cls, q.subject); ch[k] = [...new Set([...(ch[k] || []), q.chapter])];
+      const ok = key(old.cls, old.subject);
+      if (!qs.some(x => x.cls === old.cls && x.subject === old.subject && x.chapter === old.chapter)) ch[ok] = (ch[ok] || []).filter(c => c !== old.chapter);
+      set("questions", qs); set("images", im); set("chapters", ch); return wait(doc);
+    },
     async countQuestions(f) { return wait(get("questions", []).filter(q => match(q, f)).length); },
     async updateQuestions(f, patch) {
       const qs = get("questions", []); let n = 0;
@@ -322,6 +354,13 @@ function localApi() {
       await tx(["questions", "images"], "readwrite", (s, im) => { gone.forEach(q => { s.delete(q.id); im.delete(q.id); }); });
       cache = qs.filter(q => !match(q, f)); await touch();
       return gone.length;
+    },
+    async updateQuestion(id, q, img) {
+      const qs = await all(), old = qs.find(x => x.id === id); if (!old) throw new Error("gone");
+      const hasImg = img === "remove" ? false : img === "keep" ? !!old.hasImg : true;
+      const doc = { ...clean(q), id, hasImg }; if (!hasImg) { delete doc.imgAR; delete doc.imgW; }
+      await tx(["questions", "images"], "readwrite", (s, im) => { s.put(doc); if (img === "remove") im.delete(id); else if (img !== "keep") im.put(img, id); });
+      qs[qs.indexOf(old)] = doc; await touch(); return doc;
     },
     async countQuestions(f) { return (await all()).filter(q => match(q, f)).length; },
     async updateQuestions(f, patch) {

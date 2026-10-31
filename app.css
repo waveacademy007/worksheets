@@ -445,3 +445,11 @@ div.snm{cursor:default}
 .pfpick .cam{position:absolute;right:-4px;bottom:-4px;width:26px;height:26px;border-radius:50%;background:var(--gold);color:var(--navy);display:grid;place-items:center;border:2px solid var(--navy)}
 .pfpick .cam .ic{width:15px;height:15px;stroke-width:2.2}
 .pfpick input,.photo-panel .filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+
+/* ---- v2.0: edit button, gold ring numbers, source line ---- */
+.q .qadm{display:flex;gap:8px;margin-top:8px}
+.q .qadm .btn{margin-top:0;font-size:.82rem;padding:4px 12px}
+.q .qedit{color:var(--accent-2);border-color:var(--accent)}
+.ws-q .n.ring{display:grid;place-items:center;width:27px;height:27px;border-radius:50%;border:1.6px solid #d99a0b;color:#a86f00;font:700 11.5px/1 Arial,"Helvetica Neue",sans-serif;letter-spacing:-.2px;margin-top:-4px;align-self:start}
+.ws-col{padding-top:5px}
+.ws-q .srcl{text-align:right;font-weight:700;font-size:.92em;margin-top:2px}

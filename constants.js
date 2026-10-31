@@ -4,9 +4,9 @@ export const AR_OPTS=["Both A and R are true and R is the correct explanation of
 export const CLASSES=[9,10,11,12];
 
 // Where a question comes from. A question can have several, each with an optional year.
-export const SOURCES = ["NCERT", "NCERT Exemplar", "CBSE PYQ", "CBSE Sample Paper", "JEE", "NEET", "Other"];
+export const SOURCES = ["NCERT", "NCERT Exemplar", "CBSE PYQ", "CBSE Sample Paper", "JEE Main", "JEE Advanced", "JEE", "NEET", "Other"];
 const SRC_ALIAS = [[/exemplar/i, "NCERT Exemplar"], [/sample\s*paper|\bsqp\b/i, "CBSE Sample Paper"], [/\bpyq\b|cbse|board/i, "CBSE PYQ"],
-  [/jee/i, "JEE"], [/neet|aipmt/i, "NEET"], [/ncert/i, "NCERT"], [/other/i, "Other"]];
+  [/jee\s*adv|\badvanced\b|iit\s*jee/i, "JEE Advanced"], [/jee\s*mains?\b|\bmains?\b/i, "JEE Main"], [/jee/i, "JEE"], [/neet|aipmt/i, "NEET"], [/ncert/i, "NCERT"], [/other/i, "Other"]];
 // "NEET 2019, NCERT Exemplar" -> [{s:"NEET",y:"2019"},{s:"NCERT Exemplar",y:""}]
 export function parseSources(text, yearDefault) {
   const out = [];
