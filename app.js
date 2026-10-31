@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=2.2";
+import { createApi, DEMO } from "./api.js?v=2.3";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.2";
-import { SAMPLE } from "./sample-questions.js?v=2.2";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.2";
+import { TYPES, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.3";
+import { SAMPLE } from "./sample-questions.js?v=2.3";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.3";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "2.2";
+const APP_VERSION = "2.3";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -28,7 +28,7 @@ const FONTS = {
   source: { fam: '"Source Serif 4", "Bookman Old Style", Georgia, serif', size: 13.4 }
 };
 const DEFAULTS = { academy: "", teacher: "", phone: "", wm: "", logo: "", logoSize: 25, cls: "", topic: "",
-  group: false, marks: false, key: true, wmOn: true, srcOn: false, font: "garamond" };
+  group: false, marks: false, key: true, wmOn: true, srcOn: false, font: "garamond", imgSizes: {} };
 
 let api, user = null, profile = null;
 let settings = { ...DEFAULTS };          // branding + worksheet options, saved to the teacher's account
@@ -87,6 +87,11 @@ function setAuthMode(m) {
   $("toReset").hidden = m === "reset";
   $("authMsg").textContent = ""; $("authMsg").className = "authmsg";
 }
+$("pwEye").onclick = () => {
+  const show = $("authPass").type === "password";
+  $("authPass").type = show ? "text" : "password";
+  $("pwEye").setAttribute("aria-pressed", String(show)); $("pwEye").setAttribute("aria-label", show ? "Hide password" : "Show password");
+};
 $("toSignup").onclick = () => setAuthMode("signup");
 $("toSignin").onclick = () => setAuthMode("signin");
 $("toReset").onclick = () => setAuthMode("reset");
@@ -206,16 +211,52 @@ document.querySelectorAll(".photoIn").forEach(inp => inp.addEventListener("chang
   $("phMsg").textContent = "Preparing photo…";
   const url = URL.createObjectURL(f), img = new Image();
   img.onload = () => {
-    const S = Math.min(img.naturalWidth, img.naturalHeight), c = document.createElement("canvas"); c.width = c.height = 256;
-    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, 256, 256); x.imageSmoothingQuality = "high";
-    x.drawImage(img, (img.naturalWidth - S) / 2, (img.naturalHeight - S) / 2, S, S, 0, 0, 256, 256);
-    URL.revokeObjectURL(url); settings.photo = c.toDataURL("image/jpeg", 0.85); saveSet();
-    $("phMsg").textContent = ""; toast("Photo updated");
+    // shrink big camera photos first, then let the teacher place the circle
+    const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+    $("phMsg").textContent = ""; openCrop(c);
   };
   img.onerror = () => { URL.revokeObjectURL(url); $("phMsg").textContent = "Could not open that photo. Try a JPG or PNG."; };
   img.src = url;
 }));
 $("phRemove").onclick = () => { settings.photo = "none"; saveSet(); toast("Photo removed"); };
+// ---- crop screen: drag to move, slider to zoom, the circle is what is kept
+const crop = { src: null, W: 0, H: 0, z: 1, ox: 0, oy: 0, B: 300 };
+function openCrop(canvas) {
+  crop.src = canvas; crop.W = canvas.width; crop.H = canvas.height; crop.z = 1; crop.ox = 0; crop.oy = 0;
+  $("cropImg").src = canvas.toDataURL("image/jpeg", 0.9); $("cropZoom").value = "1";
+  $("cropModal").hidden = false; requestAnimationFrame(cropDraw);
+}
+function cropGeom() {
+  crop.B = $("cropBox").clientWidth || 300;
+  const s = crop.B / Math.min(crop.W, crop.H) * crop.z, w = crop.W * s, h = crop.H * s;
+  const mx = (w - crop.B) / 2, my = (h - crop.B) / 2;
+  crop.ox = Math.max(-mx, Math.min(mx, crop.ox)); crop.oy = Math.max(-my, Math.min(my, crop.oy));
+  return { s, x: crop.B / 2 - w / 2 + crop.ox, y: crop.B / 2 - h / 2 + crop.oy };
+}
+function cropDraw() { const g = cropGeom(); $("cropImg").style.width = crop.W + "px"; $("cropImg").style.transform = `translate(${g.x}px,${g.y}px) scale(${g.s})`; }
+$("cropZoom").addEventListener("input", () => { crop.z = +$("cropZoom").value; cropDraw(); });
+(() => {
+  const box = $("cropBox"), pts = new Map(); let last = null, pinch = null;
+  box.addEventListener("pointerdown", e => { box.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = { x: e.clientX, y: e.clientY };
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: crop.z }; } });
+  box.addEventListener("pointermove", e => {
+    if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2 && pinch) { const [a, b] = [...pts.values()]; crop.z = Math.max(1, Math.min(4, pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d)); $("cropZoom").value = crop.z; cropDraw(); return; }
+    crop.ox += e.clientX - last.x; crop.oy += e.clientY - last.y; last = { x: e.clientX, y: e.clientY }; cropDraw();
+  });
+  const up = e => { pts.delete(e.pointerId); pinch = null; const r = [...pts.values()][0]; if (r) last = { ...r }; };
+  box.addEventListener("pointerup", up); box.addEventListener("pointercancel", up);
+  box.addEventListener("wheel", e => { e.preventDefault(); crop.z = Math.max(1, Math.min(4, crop.z * (e.deltaY < 0 ? 1.08 : 0.93))); $("cropZoom").value = crop.z; cropDraw(); }, { passive: false });
+})();
+$("cropSave").onclick = () => {
+  const g = cropGeom(), k = 256 / crop.B, c = document.createElement("canvas"); c.width = c.height = 256;
+  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, 256, 256); x.imageSmoothingQuality = "high";
+  x.drawImage(crop.src, g.x * k, g.y * k, crop.W * g.s * k, crop.H * g.s * k);
+  settings.photo = c.toDataURL("image/jpeg", 0.85); saveSet(); $("cropModal").hidden = true; toast("Photo updated");
+};
+$("cropX").onclick = $("cropCancel").onclick = () => { $("cropModal").hidden = true; };
 
 // ================= Settings (saved to the account) =================
 let saveTimer;
@@ -409,11 +450,26 @@ function renderList() {
     <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span>${q.concept && !fConcept ? `<span class="chip conchip">${esc(q.concept)}</span>` : ""}<span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}</div>
     ${q.case ? `<div class="opts">${esc(q.case)}</div>` : ""}<div>${esc(q.text).replace(/\n/g, "<br>")}</div>
     ${q.type === "AR" ? `<div class="opts">R: ${esc(q.reason)}</div>` : ""}
+    ${q.hasImg ? `<img class="qthumb${imgCache[q.id] ? "" : " loading"}" data-qimg="${esc(q.id)}" alt="Diagram, tap to enlarge"${imgCache[q.id] ? ` src="${imgCache[q.id]}"` : ""}>` : ""}
     ${q.type === "MCQ" ? `<div class="opts">${(q.opts || []).map((o, i) => "abcd"[i] + ") " + esc(o)).join(" &nbsp; ")}</div>` : ""}
     ${profile.admin ? `<div class="qadm"><button class="btn qedit" type="button" data-edit="${esc(q.id)}">Edit</button><button class="btn qdel" type="button" data-del="${esc(q.id)}">Delete</button></div>` : ""}</div></label>`).join("")
     : `<div class="empty">${total ? "No questions match this filter." : "No questions in this chapter yet."}</div>`;
+  watchThumbs();
 }
+// Diagrams load only when their card comes on screen
+let thumbQ = new Set(), thumbT = null;
+const thumbObs = "IntersectionObserver" in window ? new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) { thumbObs.unobserve(en.target); thumbQ.add(en.target.dataset.qimg); clearTimeout(thumbT); thumbT = setTimeout(loadThumbs, 120); } }), { rootMargin: "300px" }) : null;
+async function loadThumbs() {
+  const ids = [...thumbQ].filter(id => !imgCache[id]); thumbQ = new Set();
+  if (ids.length) { try { Object.assign(imgCache, await api.images(ids)); } catch (e) { /* try again next time */ } }
+  document.querySelectorAll("#qlist .qthumb.loading").forEach(im => { const d = imgCache[im.dataset.qimg]; if (d) { im.src = d; im.classList.remove("loading"); } });
+}
+function watchThumbs() { document.querySelectorAll("#qlist .qthumb.loading").forEach(im => { if (thumbObs) thumbObs.observe(im); else thumbQ.add(im.dataset.qimg); }); if (!thumbObs) loadThumbs(); }
+$("imgX").onclick = () => { $("imgModal").hidden = true; };
+$("imgModal").addEventListener("click", e => { if (e.target.id === "imgModal") $("imgModal").hidden = true; });
 $("qlist").addEventListener("click", async e => {
+  const th = e.target.closest(".qthumb");
+  if (th) { e.preventDefault(); if (th.getAttribute("src")) { $("imgBig").src = th.src; $("imgModal").hidden = false; } return; }
   const ed = e.target.closest("[data-edit]");
   if (ed) { e.preventDefault(); const q = current.find(x => x.id === ed.dataset.edit); if (q) openEdit(q); return; }
   const del = e.target.closest("[data-del]");
@@ -477,7 +533,9 @@ async function loadPickedImages() {
 // ================= My Worksheets & Drafts =================
 let currentDraft = null;           // {id, name} while editing a draft
 let lastSavedSig = "";
-const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "srcOn", "font"];
+const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "srcOn", "font", "imgSizes"];
+// Diagram size: the teacher's choice for this worksheet, else the admin's default
+const effW = q => ((settings.imgSizes || {})[q.id]) || q.imgW || 70;
 function snapshot(kind, name) {
   const qs = JSON.parse(JSON.stringify([...picked.values()]));
   return { kind, name, count: qs.length, questions: qs, ws: Object.fromEntries(WS_KEYS.map(k => [k, settings[k]])), updatedAt: Date.now() };
@@ -506,7 +564,7 @@ $("wsClear").onclick = () => {
   const b = $("wsClear");
   if (picked.size && b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Tap again to clear"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Start new"; }, 4000); return; }
   b.dataset.armed = ""; b.textContent = "Start new";
-  picked.clear(); savePicked(); currentDraft = null; store.set("ws_draft_" + user.uid, null);
+  picked.clear(); savePicked(); currentDraft = null; store.set("ws_draft_" + user.uid, null); settings.imgSizes = {};
   settings.topic = ""; settings.cls = ""; $("wTopic").value = ""; $("wClass").value = ""; saveSet();
   updateCounts(true); renderPreview(); $("draftNote").hidden = true; toast("Started a new worksheet");
 };
@@ -524,7 +582,7 @@ async function renderWorksheets(kind) {
 async function openWorksheet(id, thenPdf) {
   const w = await api.getWorksheet(id); if (!w) { toast("That worksheet was not found"); return; }
   picked = new Map((w.questions || []).map(q => [q.id, q])); savePicked();
-  Object.assign(settings, w.ws || {}); fillSettingsUI(); saveSet();
+  Object.assign(settings, w.ws || {}); settings.imgSizes = { ...((w.ws || {}).imgSizes || {}) }; fillSettingsUI(); saveSet();
   currentDraft = w.kind === "draft" ? { id: w.id, name: w.name } : null; store.set("ws_draft_" + user.uid, currentDraft);
   lastSavedSig = w.kind === "saved" ? [...picked.keys()].join(",") + "|" + settings.topic + "|" + settings.cls : "";
   updateCounts(true); show("ws");
@@ -622,7 +680,7 @@ $("aConcept").onchange=()=>{$("aConceptNew").hidden=$("aConcept").value!==NEW;if
 let addKeep=null;   // remember the last chapter/concept so several questions can be added in a row
 let editing=null;   // the question being edited, or null when adding a new one
 const ADD_FIELDS=["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns","aChapterNew","aConceptNew"];
-function clearAddForm(){ADD_FIELDS.forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;aImgUI();$("aErr").textContent="";$("aImgMsg").textContent=""}
+function clearAddForm(){ADD_FIELDS.forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;$("aImgW").value="70";aImgUI();$("aErr").textContent="";$("aImgMsg").textContent=""}
 function addMode(isEdit){$("addTitle").textContent=isEdit?"Edit question":"Add a question";$("addSave").textContent=isEdit?"Save changes":"Save question"}
 $("addOpen").onclick=()=>{if(editing){editing=null;clearAddForm();$("aExam").value="CBSE"}addMode(false);$("addModal").hidden=false;
   const k=addKeep&&(!nav.chapter||(addKeep.cls===nav.cls&&addKeep.subject===nav.subject&&addKeep.chapter===nav.chapter))?addKeep:{cls:nav.cls||10,subject:nav.subject,chapter:nav.chapter,concept:fConcept&&fConcept!=="\u0000"?fConcept:""};
@@ -636,7 +694,9 @@ function srcRow(s="",y=""){const d=document.createElement("div");d.className="sr
 $("aSrcAdd").onclick=()=>srcRow();
 function readSrcRows(){return [...$("aSrcRows").children].map(r=>({s:r.querySelector("select").value,y:(r.querySelector("input").value.trim().match(/^(19|20)\d{2}$/)||[""])[0]}))}
 let aImg=null;
-function aImgUI(){const on=!!aImg;$("aImgPrev").hidden=!on;$("aImgW").hidden=!on;$("aImgDel").hidden=!on;if(on)$("aImgPrev").src=aImg.src;$("aImgBtn").firstChild.nodeValue=on?"Change image":"Add image"}
+function aImgUI(){const on=!!aImg;$("aImgPrev").hidden=!on;$("aImgSize").hidden=!on;$("aImgDel").hidden=!on;if(on){$("aImgPrev").src=aImg.src;$("aImgWPrev").src=aImg.src}aImgWUI();$("aImgBtn").firstChild.nodeValue=on?"Change image":"Add image"}
+function aImgWUI(){const v=+$("aImgW").value;$("aImgWVal").textContent=v+"%";$("aImgWPrev").style.width=v+"%"}
+$("aImgW").addEventListener("input",aImgWUI);
 $("aImgIn").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];if(!f)return;
   $("aImgMsg").textContent="Preparing image…";
   const url=URL.createObjectURL(f);const img=new Image();
@@ -654,7 +714,7 @@ async function openEdit(q){
   $("aMarks").value=q.marks??"";$("aText").value=q.text||"";$("aReason").value=q.reason||"";$("aCase").value=q.case||"";$("aAns").value=q.ans||"";
   if(q.type==="MCQ")(q.opts||[]).forEach((o,i)=>{if(i<4)$("aO"+i).value=o});
   (q.src||[]).forEach(x=>srcRow(x.s,x.y));
-  $("aImgW").value=String(q.imgW||70);if(![...$("aImgW").options].some(o=>o.selected&&o.value===String(q.imgW||70)))$("aImgW").value="70";
+  $("aImgW").value=String(q.imgW||70);aImgWUI();
   $("addModal").hidden=false;
   if(q.hasImg){$("aImgMsg").textContent="Loading diagram…";
     try{if(!imgCache[q.id])Object.assign(imgCache,await api.images([q.id]));}catch(e){}
@@ -720,6 +780,9 @@ function parseTSV(t){const rows=[];let row=[],cur="",q=false;
     if(q){if(c=='"'){if(t[i+1]=='"'){cur+='"';i++}else q=false}else cur+=c}
     else if(c=='"'&&cur==="")q=true;else if(c=="\t"){row.push(cur);cur=""}else if(c=="\n"||c=="\r"){if(c=="\r"&&t[i+1]=="\n")i++;row.push(cur);rows.push(row);row=[];cur=""}else cur+=c}
   if(cur!==""||row.length){row.push(cur);rows.push(row)}return rows.filter(r=>r.some(x=>String(x).trim()))}
+// "35%", "35", "Small", "Medium", "Full" -> percent of the column (10–100, steps of 5)
+function sizePct(t){const s=String(t||"").trim().toLowerCase();const w={small:40,medium:70,full:100}[s];if(w)return w;
+  const n=parseFloat(s);return Number.isFinite(n)?Math.max(10,Math.min(100,Math.round(n/5)*5)):70}
 const SUBJ_ALIAS={math:"Maths",maths:"Maths",mathematics:"Maths",bio:"Biology",phy:"Physics",chem:"Chemistry"};
 function rowsToQuestions(rows,images){
   const out=[],probs=[];const newCh=new Set(),newCon=new Set();if(!rows.length){probs.push("The sheet is empty.");return {out,probs}}
@@ -750,7 +813,7 @@ function rowsToQuestions(rows,images){
     const q={id:"i"+Date.now().toString(36)+ix,exam:(v.exam||"CBSE").split(/[ ,\/]+/).map(x=>x.toUpperCase()).filter(Boolean),cls,subject:subj,chapter,type,text:v.text,ans,
       marks:parseFloat(v.marks)||({MCQ:1,AR:1,SA:2,LA:5,CS:4}[type])};
     if(type==="MCQ")q.opts=[v.o0,v.o1,v.o2,v.o3];if(type==="AR"){q.opts=AR_OPTS;q.reason=v.reason}if(type==="CS")q.case=v.case;
-    if(img){q.img=img.src;q.imgAR=img.ar;q.imgW={small:40,medium:70,full:100}[(v.imgSize||"medium").toLowerCase()]||70}
+    if(img){q.img=img.src;q.imgAR=img.ar;q.imgW=sizePct(v.imgSize)}
     const src=parseSources(v.src,v.year);if(src.length)q.src=src;
     if(concept)q.concept=concept;
     out.push(q)});
@@ -1099,7 +1162,7 @@ function qHTML(q,n){
   else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${esc(q.text)}</div><div class="s ar"><b>Reason (R):</b> ${esc(q.reason)}</div>`+optsHTML(AR_OPTS)+st;
   else if(q.type==="SA"||q.type==="LA")b=`<div class="s">${mk}${esc(q.text)}</div>`+st;
   else if(q.type==="CS")b=`<div class="s">${mk}Read the passage and answer the questions that follow.</div><div class="case">${esc(q.case)}</div>`+q.text.split("\n").filter(Boolean).map(t=>`<div class="s">${esc(t)}</div>`).join("")+st;
-  if(q.img){const im=`<div class="qimg"><img src="${q.img}" alt="" style="width:${q.imgW||70}%;aspect-ratio:${q.imgAR||1.5}"></div>`;
+  if(q.img){const im=`<div class="qimg"><img src="${q.img}" alt="" style="width:${effW(q)}%;aspect-ratio:${q.imgAR||1.5}"></div>`;
     const tmp=document.createElement("div");tmp.innerHTML=b;const kids=[...tmp.children];
     const after=q.type==="AR"?kids[1]:q.type==="CS"?kids[1]:kids[0];
     if(after)after.insertAdjacentHTML("afterend",im);b=tmp.innerHTML}
@@ -1196,7 +1259,25 @@ async function renderPreview(){
     const c=p.cloneNode(true);c.style.transform=`scale(${sc})`;wrap.appendChild(c);S.appendChild(wrap)});
   const n=picked.size;
   $("pageInfo").textContent=`${n} question${n===1?"":"s"} · ${pages.length} page${pages.length>1?"s":""} · A4`;
+  renderImgSizes();
 }
+// Teacher's "Diagram sizes" list (rebuilt only when the set of diagrams changes, so sliding stays smooth)
+let iszSig="";
+function wsOrder(){const order=["MCQ","AR","SA","CS","LA"];const qs=[...picked.values()];return settings.group?qs.slice().sort((a,b)=>order.indexOf(a.type)-order.indexOf(b.type)):qs}
+function renderImgSizes(){
+  const list=wsOrder().map((q,i)=>({q,n:i+1})).filter(x=>x.q.hasImg&&imgCache[x.q.id]);
+  $("imgSizesPanel").hidden=!list.length;
+  const sig=list.map(x=>x.q.id+":"+x.n).join(",");if(sig===iszSig)return;iszSig=sig;
+  $("imgSizes").innerHTML=list.map(({q,n})=>{const v=effW(q),own=(settings.imgSizes||{})[q.id];
+    return `<div class="isz-item" data-id="${esc(q.id)}"><span class="qn">Q${n}</span><img src="${imgCache[q.id]}" alt=""><div class="ctl">
+      <div class="isz-row"><b class="v">${v}%</b><button class="link rs" type="button" ${own?"":"hidden"}>Reset to ${q.imgW||70}%</button></div>
+      <input type="range" min="10" max="100" step="5" value="${v}" aria-label="Size of the diagram in Q${n}"></div></div>`}).join("");
+}
+$("imgSizes").addEventListener("input",e=>{const it=e.target.closest(".isz-item");if(!it||e.target.type!=="range")return;
+  const v=+e.target.value;settings.imgSizes={...(settings.imgSizes||{}),[it.dataset.id]:v};it.querySelector(".v").textContent=v+"%";it.querySelector(".rs").hidden=false;saveSet();schedule()});
+$("imgSizes").addEventListener("click",e=>{const b=e.target.closest(".rs");if(!b)return;const it=b.closest(".isz-item"),id=it.dataset.id;
+  const s={...(settings.imgSizes||{})};delete s[id];settings.imgSizes=s;const q=picked.get(id);const v=(q&&q.imgW)||70;
+  it.querySelector("input").value=v;it.querySelector(".v").textContent=v+"%";b.hidden=true;saveSet();schedule()});
 addEventListener("resize",()=>{if(!$("v-ws").hidden)schedule()});
 
 
@@ -1553,7 +1634,7 @@ function pptBlocks(q, n, imgPng) {
   if (q.type === "AR") { T(q.text, { label: `Q${n}`, pre: "Assertion (A): " }); T(q.reason || "", { pre: "Reason (R): " }); }
   else if (q.type === "CS") { T("Read the passage and answer the questions that follow.", { label: `Q${n}` }); T(q.case || "", { passage: true }); }
   else T(q.text, { label: `Q${n}` });
-  if (imgPng) B.push({ k: "img", ...imgPng });
+  if (imgPng) B.push({ k: "img", pct: effW(q), ...imgPng });
   if (q.type === "CS") (q.text || "").split("\n").filter(Boolean).forEach(t => T(t));
   if (q.type === "MCQ" || q.type === "AR") {
     const opts = q.type === "AR" ? AR_OPTS : (q.opts || []);
@@ -1574,7 +1655,7 @@ function layoutBlocks(blocks, w, pt, allowSplit) {
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     if (b.k === "img") {
-      let iw = Math.min(w - IND, 3.4), ih = iw / b.ar;
+      let iw = Math.max(0.6, (w - IND) * (b.pct || 70) / 100), ih = iw / b.ar;   // same % of the column as on the worksheet
       const maxH = Math.min(2.3, BODY_H * 0.45); if (ih > maxH) { ih = maxH; iw = ih * b.ar; }
       if (ih > room()) { if (!allowSplit) return null; newPage(); }
       pages[pages.length - 1].push({ k: "img", x: IND, y, w: iw, h: ih, data: b.data }); y += ih + GAP; continue;
