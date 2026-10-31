@@ -382,3 +382,10 @@ main#views{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-ins
 .srcrow input,.srcrow select{text-transform:none;letter-spacing:0;font-weight:400}
 .qtools{grid-template-columns:1fr 1fr!important}
 .qtools input{grid-column:1/-1}
+
+.dr-ver{order:99;margin:14px 12px 0;font-size:.8rem;opacity:.6}
+.dr-list{display:flex;flex-direction:column}
+#signOut{order:98}
+.ver{text-align:center;margin-top:12px;font-size:.82rem}
+.updbar{position:sticky;top:calc(env(safe-area-inset-top,0px) + 62px);z-index:12;background:var(--gold);color:var(--navy);font-weight:700;text-align:center;padding:10px 16px;box-shadow:var(--shadow)}
+.updbar .link{color:var(--navy)}

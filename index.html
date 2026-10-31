@@ -10,7 +10,7 @@
 <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d4f8c'/%3E%3Cpath d='M18 18h28M18 30h28M18 42h18' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="app.css?v=1.7">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -39,6 +39,7 @@
       <button class="link" id="toSignin" hidden>Already have an account? Sign in</button>
       <button class="link" id="toReset">Forgot password?</button>
     </div>
+    <p class="note ver" id="loginVer"></p>
     <p class="demo-note" id="demoNote" hidden>Demo mode: data is saved only in this browser. Add your Firebase settings in <code>js/config.js</code> to go live. The first account created becomes the admin.</p>
   </div>
 </div>
@@ -81,10 +82,12 @@
     <a id="drCall"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h3l2 5-2 1.5a11 11 0 0 0 4.5 4.5L15 13l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 4 6a2 2 0 0 1 2-2z"/></svg>Contact Us</a>
     <a id="drWa" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5l1.2-3.6A8 8 0 1 1 8.4 18.6z"/><path d="M9 8.6c.2 2.6 2.4 4.9 5 5.2l1-1.2-1.6-.9-.8.6a4 4 0 0 1-2-2l.6-.8-.9-1.6z"/></svg>WhatsApp Us</a>
     <button data-go="admin" id="drAdmin" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Admin</button>
+    <p class="dr-ver" id="drVer"></p>
     <button id="signOut"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/></svg>Sign out</button>
   </div>
 </nav>
 
+<div class="updbar" id="updBar" hidden></div>
 <main id="views">
   <section class="view" id="v-home">
     <div class="pickers">
@@ -192,6 +195,7 @@
       <p class="note">These details appear on every worksheet header and footer.</p>
     </div>
     <button class="btn wide" id="signOut2">Sign out</button>
+    <p class="note ver" id="pfVer"></p>
   </section>
 
   <section class="view" id="v-refer" hidden>
@@ -428,6 +432,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=1.7"></script>
 </body>
 </html>

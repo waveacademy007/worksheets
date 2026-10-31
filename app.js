@@ -1,12 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js";
+import { createApi, DEMO } from "./api.js?v=1.7";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, AR_OPTS, SUBJECTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js";
-import { SAMPLE } from "./sample-questions.js";
+import { TYPES, AR_OPTS, SUBJECTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=1.7";
+import { SAMPLE } from "./sample-questions.js?v=1.7";
+// App version: change it (here, in index.html and in version.json) with every update
+const APP_VERSION = "1.7";
+const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -133,6 +136,8 @@ async function startApp() {
   paintAvatars();
   $("pfName").textContent = nm; $("pfEmail").textContent = user.email || "";
   $("pfPlan").textContent = planText();
+  $("drVer").textContent = `Version ${APP_VERSION} · ${APP_DATE}`;
+  $("pfVer").textContent = `App version ${APP_VERSION} · updated ${APP_DATE}`;
   if (OFFLINE) { $("teachersPanel").hidden = true; $("backupPanel").hidden = false; $("installPanel").hidden = isInstalled(); $("signOut").hidden = true; $("signOut2").hidden = true; }
   picked = new Map(store.get("ws_picked_" + user.uid, []).map(q => [q.id, q]));
   currentDraft = store.get("ws_draft_" + user.uid, null);
@@ -144,6 +149,20 @@ async function startApp() {
   catch (e) { chapterMap = {}; toast("Could not load chapters. Check your internet."); }
   initHome();
   if (OFFLINE) backupReminder();
+  checkForUpdate();
+}
+// Tell the user when a newer version is on the website (phones often keep the old files for a while)
+async function checkForUpdate() {
+  try {
+    const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) return;
+    const { version } = await r.json();
+    if (version && version !== APP_VERSION) {
+      const b = $("updBar"); b.hidden = false;
+      b.innerHTML = `New version ${esc(version)} is ready. <button class="link" id="updGo">Update now</button>`;
+      $("updGo").onclick = () => { location.href = location.pathname + "?v=" + encodeURIComponent(version) + "#home"; };
+    }
+  } catch (e) { /* offline: nothing to check */ }
 }
 function planText() {
   if (profile.admin) return "Admin · full access";
@@ -1432,6 +1451,7 @@ window.__onBack = () => {
 // ================= Start =================
 (async () => {
   $("loginName").textContent = APP.name;
+  $("loginVer").textContent = `Version ${APP_VERSION}`;
   document.title = APP.name;
   $("demoNote").hidden = !DEMO || OFFLINE;
   setAuthMode("signin");
