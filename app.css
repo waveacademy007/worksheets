@@ -482,3 +482,10 @@ input[type=range]{width:100%;accent-color:var(--accent);padding:0;border:0;backg
 .isz-item img{width:64px;height:48px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:6px}
 .isz-item .ctl{display:grid;gap:2px;min-width:0}
 .isz-item .ctl .isz-row button{font-size:.8rem}
+
+/* ---- v2.4: new types ---- */
+.chip.proofchip{color:#5b3fc4;border-color:#c9bdf3;background:#f3f0ff}
+.qtools input{grid-column:auto!important}
+.ws-q.wans{margin-bottom:5px}
+.ws-q.wans .n{font-size:.92em}
+.ws-ktab .ka{overflow-wrap:break-word;padding:3px 2px}

@@ -1,5 +1,11 @@
 // Fixed lists used across the app
-export const TYPES={MCQ:"MCQ",AR:"Assertion–Reason",SA:"Short Answer",LA:"Long Answer",CS:"Case Study"};
+export const TYPES={MCQ:"MCQ",FB:"Fill in the Blank",TF:"True / False",AR:"Assertion–Reason",NUM:"Numerical",VSA:"Very Short Answer",SA:"Short Answer",LA:"Long Answer",CS:"Case Study"};
+// Section order on the worksheet, default marks, and which answers fit in the answer-key table
+export const TYPE_ORDER=["MCQ","FB","TF","AR","NUM","VSA","SA","CS","LA"];
+export const DEF_MARKS={MCQ:1,FB:1,TF:1,AR:1,NUM:4,VSA:2,SA:3,LA:5,CS:4};
+export const KEY_TABLE=new Set(["MCQ","FB","TF","AR","NUM"]);
+// "t", "true", "T" -> "True"
+export const tfAns=a=>/^\s*t(rue)?\s*$/i.test(a||"")?"True":/^\s*f(alse)?\s*$/i.test(a||"")?"False":(a||"");
 export const AR_OPTS=["Both A and R are true and R is the correct explanation of A.","Both A and R are true but R is not the correct explanation of A.","A is true but R is false.","A is false but R is true."];
 export const CLASSES=[9,10,11,12];
 
