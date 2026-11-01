@@ -99,7 +99,7 @@ select:focus-visible,input:focus-visible,textarea:focus-visible,button:focus-vis
 .ws-q .mk{float:right;font-weight:700;margin-left:6px}
 .ws-sec{grid-column:1/-1;font-weight:800;font-size:14px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #111;margin:0 0 8px;padding-bottom:2px}
 .ws-wm{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%) rotate(-55deg);font-size:92px;font-weight:700;letter-spacing:.06em;
-  color:rgba(0,0,0,.055);white-space:nowrap;z-index:0;pointer-events:none;text-transform:uppercase}
+  color:rgba(0,0,0,.07);white-space:nowrap;z-index:3;pointer-events:none;text-transform:uppercase}   /* on top of text and diagrams, light */
 .ws-foot{border-top:2px dashed #333;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:19px;position:relative}
 .ws-foot .pg{position:absolute;right:-30px;bottom:6px;transform:rotate(-90deg);font-size:12px}
 .ws-ktab{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--qs,13.4px);margin-bottom:8px;text-align:center}
@@ -489,3 +489,6 @@ input[type=range]{width:100%;accent-color:var(--accent);padding:0;border:0;backg
 .ws-q.wans{margin-bottom:5px}
 .ws-q.wans .n{font-size:.92em}
 .ws-ktab .ka{overflow-wrap:break-word;padding:3px 2px}
+
+/* ---- v2.5: written answers in the key are left-aligned ---- */
+.ws-q.wans .s{text-align:left}

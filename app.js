@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=2.4";
+import { createApi, DEMO } from "./api.js?v=2.6";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.4";
-import { SAMPLE } from "./sample-questions.js?v=2.4";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.4";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.6";
+import { SAMPLE } from "./sample-questions.js?v=2.6";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.6";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "2.4";
+const APP_VERSION = "2.6";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -528,8 +528,7 @@ async function saveToBank(list) {
 }
 async function loadPickedImages() {
   const need = [...picked.values()].filter(q => q.hasImg && !imgCache[q.id]).map(q => q.id);
-  if (!need.length) return;
-  try { Object.assign(imgCache, await api.images(need)); } catch (e) { toast("Some diagrams could not be loaded."); }
+  if (need.length) { try { Object.assign(imgCache, await api.images(need)); } catch (e) { toast("Some diagrams could not be loaded."); } }
 }
 
 // ================= My Worksheets & Drafts =================
@@ -786,9 +785,9 @@ function parseTSV(t){const rows=[];let row=[],cur="",q=false;
     if(q){if(c=='"'){if(t[i+1]=='"'){cur+='"';i++}else q=false}else cur+=c}
     else if(c=='"'&&cur==="")q=true;else if(c=="\t"){row.push(cur);cur=""}else if(c=="\n"||c=="\r"){if(c=="\r"&&t[i+1]=="\n")i++;row.push(cur);rows.push(row);row=[];cur=""}else cur+=c}
   if(cur!==""||row.length){row.push(cur);rows.push(row)}return rows.filter(r=>r.some(x=>String(x).trim()))}
-// "35%", "35", "Small", "Medium", "Full" -> percent of the column (10–100, steps of 5)
+// "35%", "37", "Small", "Medium", "Full" -> percent of the column (10–100)
 function sizePct(t){const s=String(t||"").trim().toLowerCase();const w={small:40,medium:70,full:100}[s];if(w)return w;
-  const n=parseFloat(s);return Number.isFinite(n)?Math.max(10,Math.min(100,Math.round(n/5)*5)):70}
+  const n=parseFloat(s);return Number.isFinite(n)?Math.max(10,Math.min(100,Math.round(n))):70}
 const SUBJ_ALIAS={math:"Maths",maths:"Maths",mathematics:"Maths",bio:"Biology",phy:"Physics",chem:"Chemistry"};
 function rowsToQuestions(rows,images){
   const out=[],probs=[];const newCh=new Set(),newCon=new Set();if(!rows.length){probs.push("The sheet is empty.");return {out,probs}}
@@ -1215,7 +1214,7 @@ function build(){
   qs.forEach((q,i)=>{if(settings.group&&q.type!==last){const s=document.createElement("div");s.className="ws-sec";s.textContent=`Section ${"ABCDEFGHI"[sec++]} – ${TYPES[q.type]||q.type}`;items.push(s);last=q.type}items.push(qHTML(q,i+1))});
   if(settings.key){
     // short answers (MCQ, FB, T/F, AR, Numerical) in a table; written answers listed below it
-    const all=qs.map((q,i)=>({n:i+1,q}));
+    const all=qs.map((q,i)=>({n:i+1,q})).filter(x=>!x.q.proof);   // proving questions have no key entry
     const obj=all.filter(x=>KEY_TABLE.has(x.q.type)),wr=all.filter(x=>!KEY_TABLE.has(x.q.type));
     if(obj.length||wr.length){
       const h=document.createElement("div");h.className="ws-sec";h.textContent="Answer Key";items.push(h);
@@ -1293,7 +1292,7 @@ function renderImgSizes(){
   $("imgSizes").innerHTML=list.map(({q,n})=>{const v=effW(q),own=(settings.imgSizes||{})[q.id];
     return `<div class="isz-item" data-id="${esc(q.id)}"><span class="qn">Q${n}</span><img src="${imgCache[q.id]}" alt=""><div class="ctl">
       <div class="isz-row"><b class="v">${v}%</b><button class="link rs" type="button" ${own?"":"hidden"}>Reset to ${q.imgW||70}%</button></div>
-      <input type="range" min="10" max="100" step="5" value="${v}" aria-label="Size of the diagram in Q${n}"></div></div>`}).join("");
+      <input type="range" min="10" max="100" step="1" value="${v}" aria-label="Size of the diagram in Q${n}"></div></div>`}).join("");
 }
 $("imgSizes").addEventListener("input",e=>{const it=e.target.closest(".isz-item");if(!it||e.target.type!=="range")return;
   const v=+e.target.value;settings.imgSizes={...(settings.imgSizes||{}),[it.dataset.id]:v};it.querySelector(".v").textContent=v+"%";it.querySelector(".rs").hidden=false;saveSet();schedule()});
@@ -1819,7 +1818,7 @@ async function makePpt(opts) {
     });
   }
   if (opts.key) {
-    const all = qs.map((q, i) => ({ n: i + 1, q }));
+    const all = qs.map((q, i) => ({ n: i + 1, q })).filter(x => !x.q.proof);   // proving questions have no key entry
     const keyed = all.filter(x => KEY_TABLE.has(x.q.type)), written = all.filter(x => !KEY_TABLE.has(x.q.type));
     if (keyed.length) {
       const mx = Math.max(0, ...keyed.map(x => keyAns(x.q).length)), per = mx <= 2 ? 10 : mx <= 6 ? 8 : mx <= 10 ? 6 : 4, rowsPerSlide = 8;            // 4 Q/Ans pairs per slide
