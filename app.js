@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=2.6";
+import { createApi, DEMO } from "./api.js?v=2.7";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.6";
-import { SAMPLE } from "./sample-questions.js?v=2.6";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.6";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.7";
+import { SAMPLE } from "./sample-questions.js?v=2.7";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.7";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "2.6";
+const APP_VERSION = "2.7";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -331,7 +331,7 @@ const SUBJECT_ICONS = {
 function initHome() {
   fillSel($("fExam"), [["", "All exams"], ["CBSE", "CBSE"], ["JEE", "JEE"], ["NEET", "NEET"]]);
   fillSel($("fClass"), CLASSES.map(c => [String(c), "Class " + roman(c)]));
-  fillSel($("fType"), [...TYPE_ORDER.map(k => [k, TYPES[k]]), ["_proof", "Proof questions"]], "All types");
+  fillSel($("fType"), TYPE_ORDER.map(k => [k, TYPES[k]]), "All types");
   fillSel($("fMarks"), [1, 2, 3, 4, 5].map(m => [String(m), m + (m === 1 ? " mark" : " marks")]), "All marks");
   fillSel($("fSrc"), SOURCES.map(x => [x, x]), "All sources");
   fillSel($("wdSrc"), SOURCES.map(x => [x, x]), "None");
@@ -438,7 +438,7 @@ $("cChips").addEventListener("click", e => { const b = e.target.closest("[data-c
 function shown() {
   const e = $("fExam").value, t = $("fType").value, sr = $("fSrc").value, w = $("fSearch").value.trim().toLowerCase();
   const mk = $("fMarks").value;
-  return usable().filter(q => (!e || (q.exam || []).includes(e)) && (!t || (t === "_proof" ? q.proof : q.type === t)) && (!sr || (q.src || []).some(x => x.s === sr)) && (!mk || +q.marks === +mk) &&
+  return usable().filter(q => (!e || (q.exam || []).includes(e)) && (!t || (t === "PR" ? isProof(q) : q.type === t)) && (!sr || (q.src || []).some(x => x.s === sr)) && (!mk || +q.marks === +mk) &&
     (!fConcept || (fConcept === "\u0000" ? !q.concept : sameName(q.concept, fConcept))) &&
     (!w || ((q.text || "") + " " + (q.case || "") + " " + (q.reason || "")).toLowerCase().includes(w)));
 }
@@ -449,11 +449,11 @@ function renderList() {
   $("shownInfo").textContent = `${list.length} of ${total} questions`;
   $("qlist").innerHTML = list.length ? list.map(q => `<label class="q ${picked.has(q.id) ? "on" : ""}" data-id="${esc(q.id)}">
     <input type="checkbox" ${picked.has(q.id) ? "checked" : ""} aria-label="Use this question">
-    <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span>${q.concept && !fConcept ? `<span class="chip conchip">${esc(q.concept)}</span>` : ""}<span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.proof ? `<span class="chip proofchip">Proof</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}</div>
+    <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span>${q.concept && !fConcept ? `<span class="chip conchip">${esc(q.concept)}</span>` : ""}<span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.proof && q.type !== "PR" ? `<span class="chip proofchip">Proof</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}</div>
     ${q.case ? `<div class="opts">${esc(q.case)}</div>` : ""}<div>${esc(q.text).replace(/\n/g, "<br>")}</div>
     ${q.type === "AR" ? `<div class="opts">R: ${esc(q.reason)}</div>` : ""}${q.type === "TF" ? `<div class="opts">(True / False)</div>` : ""}
     ${q.hasImg ? `<img class="qthumb${imgCache[q.id] ? "" : " loading"}" data-qimg="${esc(q.id)}" alt="Diagram, tap to enlarge"${imgCache[q.id] ? ` src="${imgCache[q.id]}"` : ""}>` : ""}
-    ${q.type === "MCQ" ? `<div class="opts">${(q.opts || []).map((o, i) => "abcd"[i] + ") " + esc(o)).join(" &nbsp; ")}</div>` : ""}
+    ${isMCQ(q.type) ? `<div class="opts">${(q.opts || []).map((o, i) => "abcd"[i] + ") " + esc(o)).join(" &nbsp; ")}</div>` : ""}
     ${profile.admin ? `<div class="qadm"><button class="btn qedit" type="button" data-edit="${esc(q.id)}">Edit</button><button class="btn qdel" type="button" data-del="${esc(q.id)}">Delete</button></div>` : ""}</div></label>`).join("")
     : `<div class="empty">${total ? "No questions match this filter." : "No questions in this chapter yet."}</div>`;
   watchThumbs();
@@ -653,9 +653,9 @@ $("fbList").addEventListener("click", async e => {
 // ================= Add one question (admin) =================
 // ---- add question
 fillSel($("aType"),TYPE_ORDER.map(k=>[k,TYPES[k]]));
-function addTypeUI(){const t=$("aType").value;$("aOpts").hidden=t!=="MCQ";$("aReasonL").hidden=t!=="AR";$("aCaseL").hidden=t!=="CS";
+function addTypeUI(){const t=$("aType").value;$("aOpts").hidden=!isMCQ(t);$("aReasonL").hidden=t!=="AR";$("aCaseL").hidden=t!=="CS";
   $("aTextLabel").textContent=t==="AR"?"Assertion (A)":t==="CS"?"Questions on the passage (one per line)":t==="TF"?"Statement":t==="FB"?"Question (type ______ for the blank)":"Question";
-  $("aAns").placeholder={MCQ:"e.g. b",AR:"e.g. a",TF:"True or False",FB:"Word for the blank",NUM:"e.g. 9"}[t]||"Model answer (optional)";
+  $("aAns").placeholder={MCQ:"e.g. b",MCQJ:"e.g. b",AR:"e.g. a",TF:"True or False",FB:"Word for the blank",NUM:"e.g. 9"}[t]||"Model answer (optional)";
   $("aMarks").value=DEF_MARKS[t]||1;}
 $("aType").onchange=addTypeUI;
 // ---- Class → Subject → Chapter → Concept pickers (shared by Add question and Word import)
@@ -682,7 +682,7 @@ $("aConcept").onchange=()=>{$("aConceptNew").hidden=$("aConcept").value!==NEW;if
 let addKeep=null;   // remember the last chapter/concept so several questions can be added in a row
 let editing=null;   // the question being edited, or null when adding a new one
 const ADD_FIELDS=["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns","aChapterNew","aConceptNew"];
-function clearAddForm(){ADD_FIELDS.forEach(i=>$(i).value="");$("aProof").checked=false;$("aSrcRows").innerHTML="";aImg=null;$("aImgW").value="70";aImgUI();$("aErr").textContent="";$("aImgMsg").textContent=""}
+function clearAddForm(){ADD_FIELDS.forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;$("aImgW").value="70";aImgUI();$("aErr").textContent="";$("aImgMsg").textContent=""}
 function addMode(isEdit){$("addTitle").textContent=isEdit?"Edit question":"Add a question";$("addSave").textContent=isEdit?"Save changes":"Save question"}
 $("addOpen").onclick=()=>{if(editing){editing=null;clearAddForm();$("aExam").value="CBSE"}addMode(false);$("addModal").hidden=false;
   const k=addKeep&&(!nav.chapter||(addKeep.cls===nav.cls&&addKeep.subject===nav.subject&&addKeep.chapter===nav.chapter))?addKeep:{cls:nav.cls||10,subject:nav.subject,chapter:nav.chapter,concept:fConcept&&fConcept!=="\u0000"?fConcept:""};
@@ -713,8 +713,8 @@ async function openEdit(q){
   $("aType").value=q.type;addTypeUI();
   $("aExam").value=(q.exam||[]).join(", ");$("aClass").value=String(q.cls);
   addFill(0,{subject:q.subject,chapter:q.chapter,concept:q.concept||""});
-  $("aMarks").value=q.marks??"";$("aProof").checked=!!q.proof;$("aText").value=q.text||"";$("aReason").value=q.reason||"";$("aCase").value=q.case||"";$("aAns").value=q.ans||"";
-  if(q.type==="MCQ")(q.opts||[]).forEach((o,i)=>{if(i<4)$("aO"+i).value=o});
+  $("aMarks").value=q.marks??"";$("aText").value=q.text||"";$("aReason").value=q.reason||"";$("aCase").value=q.case||"";$("aAns").value=q.ans||"";
+  if(isMCQ(q.type))(q.opts||[]).forEach((o,i)=>{if(i<4)$("aO"+i).value=o});
   (q.src||[]).forEach(x=>srcRow(x.s,x.y));
   $("aImgW").value=String(q.imgW||70);aImgWUI();
   $("addModal").hidden=false;
@@ -731,12 +731,11 @@ $("addSave").onclick=async()=>{
   if(!$("aSubject").value){$("aErr").textContent="This class has no subjects. Add one in Admin → Syllabus.";return}
   if(!chapter){$("aErr").textContent="Choose a chapter, or type the new chapter's name.";return}
   if($("aConcept").value===NEW&&!concept){$("aErr").textContent="Type the new concept's name, or choose No concept.";return}
-  if(t==="MCQ"&&opts.some(o=>!o)){$("aErr").textContent="Fill all four options.";return}
+  if(isMCQ(t)&&opts.some(o=>!o)){$("aErr").textContent="Fill all four options.";return}
   if(t==="AR"&&!$("aReason").value.trim()){$("aErr").textContent="Write the Reason (R).";return}
   const q={exam:$("aExam").value.split(/[ ,]+/).map(s=>s.trim().toUpperCase()).filter(Boolean),cls:+$("aClass").value,subject:$("aSubject").value,chapter,type:t,text,ans:t==="TF"?tfAns($("aAns").value.trim()):$("aAns").value.trim(),marks:+$("aMarks").value||1};
-  if($("aProof").checked)q.proof=true;
   if(!q.exam.length)q.exam=["CBSE"];
-  if(t==="MCQ")q.opts=opts; if(t==="AR"){q.opts=AR_OPTS;q.reason=$("aReason").value.trim()} if(t==="CS")q.case=$("aCase").value.trim();
+  if(isMCQ(t))q.opts=opts; if(t==="AR"){q.opts=AR_OPTS;q.reason=$("aReason").value.trim()} if(t==="CS")q.case=$("aCase").value.trim();
   if(concept)q.concept=concept;
   if(aImg){q.img=aImg.src;q.imgAR=aImg.ar;q.imgW=+$("aImgW").value}
   const qsrc=readSrcRows();if(qsrc.length)q.src=qsrc;
@@ -773,7 +772,10 @@ async function saveEdit(old,q){
   renderList();renderHome();toast(here?"Question updated":`Question updated and moved to ${saved.chapter}`);
 }
 // ===== Import from Excel / CSV / pasted rows =====
-const TYPE_MAP={mcq:"MCQ",ar:"AR","assertion reason":"AR","assertion-reason":"AR",sa:"SA",short:"SA","short answer":"SA",la:"LA",long:"LA","long answer":"LA",cs:"CS","case study":"CS",case:"CS",
+const TYPE_MAP={mcqj:"MCQJ","mcq jee neet":"MCQJ","mcq jee":"MCQJ","mcq neet":"MCQJ","jee mcq":"MCQJ","neet mcq":"MCQJ","jee neet mcq":"MCQJ",
+  gr:"GR","give reason":"GR","give reasons":"GR",m1:"M1","1 marker":"M1","1 mark":"M1",m2:"VSA","2 marker":"VSA","2 marks":"VSA",m3:"SA","3 marker":"SA","3 marks":"SA",
+  m5:"LA","5 marker":"LA","5 marks":"LA",pr:"PR",proof:"PR",proving:"PR","numerical type":"NUM","assertion / reason":"AR","fill in the blanks":"FB",
+  mcq:"MCQ",ar:"AR","assertion reason":"AR","assertion-reason":"AR",sa:"SA",short:"SA","short answer":"SA",la:"LA",long:"LA","long answer":"LA",cs:"CS","case study":"CS",case:"CS",
   fb:"FB",fib:"FB",blank:"FB","fill in the blank":"FB","fill in the blanks":"FB","fill ups":"FB",tf:"TF","t/f":"TF","true false":"TF","true/false":"TF","true or false":"TF",
   num:"NUM",numerical:"NUM",integer:"NUM",numeric:"NUM",vsa:"VSA","very short":"VSA","very short answer":"VSA"};
 let imReady=[];
@@ -788,23 +790,26 @@ function parseTSV(t){const rows=[];let row=[],cur="",q=false;
 // "35%", "37", "Small", "Medium", "Full" -> percent of the column (10–100)
 function sizePct(t){const s=String(t||"").trim().toLowerCase();const w={small:40,medium:70,full:100}[s];if(w)return w;
   const n=parseFloat(s);return Number.isFinite(n)?Math.max(10,Math.min(100,Math.round(n))):70}
+// "MCQ – JEE/NEET", "2 Marker", "fill-in-the-blanks" -> lookup key
+const typeKey=t=>String(t||"").toLowerCase().replace(/[–—\-\/_]+/g," ").replace(/\s+/g," ").trim();
 const SUBJ_ALIAS={math:"Maths",maths:"Maths",mathematics:"Maths",bio:"Biology",phy:"Physics",chem:"Chemistry"};
 function rowsToQuestions(rows,images){
   const out=[],probs=[];const newCh=new Set(),newCon=new Set();if(!rows.length){probs.push("The sheet is empty.");return {out,probs}}
   const head=rows[0].map(norm);const map=head.map(h=>COLS[h]);
   if(!map.includes("text")||!map.includes("type")){probs.push("Header row not found. Keep the template's first row (Exam, Class, Subject, Chapter, Concept, Type, Question…).");return {out,probs}}
-  const isExample=r=>/^which vessel carries deoxygenated|^fishes have only two|^why is it necessary to separate|^draw a labelled diagram of a sectional|^\(i\) what do the two numbers|^in the circuit shown, what is the reading|^a ball is thrown vertically upward with speed 20|^the si unit of electric resistance is _|^resistivity of a wire depends on its length\.|^a ball is dropped from a height of 45 m|^prove that a line drawn parallel to one side/i.test(r.text||"");
+  const isExample=r=>/^which vessel carries deoxygenated|^fishes have only two|^why is it necessary to separate|^draw a labelled diagram of a sectional|^\(i\) what do the two numbers|^in the circuit shown, what is the reading|^a ball is thrown vertically upward with speed 20|^the si unit of electric resistance is _|^resistivity of a wire depends on its length\.|^a ball is dropped from a height of 45 m|^prove that a line drawn parallel to one side|^give reason: the walls of the ventricles/i.test(r.text||"");
   let skipped=0;
   rows.slice(1).forEach((r,ix)=>{const n=ix+2,v={};map.forEach((k,i)=>{if(k)v[k]=String(r[i]??"").trim()});
     if(!Object.values(v).some(Boolean))return;
     if(isExample(v)){skipped++;return}
-    const type=TYPE_MAP[(v.type||"").toLowerCase()];const err=[];
+    let type=TYPE_MAP[typeKey(v.type)];const err=[];
+    if(type&&/^(y|yes|true|1|✓|proof)$/i.test(v.proof||"")&&!isMCQ(type)&&type!=="AR")type="PR";   // old "Proof" column
     if(!v.text)err.push("Question is empty");
-    if(!type)err.push(`Type "${v.type||""}" should be MCQ, FB, TF, AR, NUM, VSA, SA, LA or CS`);
+    if(!type)err.push(`Type "${v.type||""}" should be MCQ, MCQJ, FB, TF, AR, GR, NUM, M1, M2, M3, PR, CS or M5`);
     const cls=parseInt(v.cls,10);if(![9,10,11,12].includes(cls))err.push("Class should be 9, 10, 11 or 12");
     if(!v.chapter)err.push("Chapter is empty");
     let ans=(v.ans||"").replace(/[()]/g,"");
-    if(type==="MCQ"){if(!(v.o0&&v.o1&&v.o2&&v.o3))err.push("All four options are needed");ans=ans.toLowerCase();if(ans&&!/^[abcd]$/.test(ans))err.push("Answer should be a, b, c or d")}
+    if(isMCQ(type)){if(!(v.o0&&v.o1&&v.o2&&v.o3))err.push("All four options are needed");ans=ans.toLowerCase();if(ans&&!/^[abcd]$/.test(ans))err.push("Answer should be a, b, c or d")}
     if(type==="AR"){if(!v.reason)err.push("Reason is empty");ans=ans.toLowerCase();if(ans&&!/^[abcd]$/.test(ans))err.push("Answer should be a, b, c or d")}
     if(type==="CS"&&!v.case)err.push("Passage is empty");
     if(type==="TF"){ans=tfAns(ans);if(ans&&!/^(True|False)$/.test(ans))err.push("Answer should be True or False")}
@@ -818,8 +823,7 @@ function rowsToQuestions(rows,images){
     if(concept){const co=chItem&&findItem(chItem.k,concept);if(co)concept=co.n;else newCon.add(cls+"|"+subj+"|"+chapter.toLowerCase()+"|"+concept.toLowerCase())}
     const q={id:"i"+Date.now().toString(36)+ix,exam:(v.exam||"CBSE").split(/[ ,\/]+/).map(x=>x.toUpperCase()).filter(Boolean),cls,subject:subj,chapter,type,text:v.text,ans,
       marks:parseFloat(v.marks)||DEF_MARKS[type]};
-    if(/^(y|yes|true|1|✓|proof)$/i.test(v.proof||""))q.proof=true;
-    if(type==="MCQ")q.opts=[v.o0,v.o1,v.o2,v.o3];if(type==="AR"){q.opts=AR_OPTS;q.reason=v.reason}if(type==="CS")q.case=v.case;
+    if(isMCQ(type))q.opts=[v.o0,v.o1,v.o2,v.o3];if(type==="AR"){q.opts=AR_OPTS;q.reason=v.reason}if(type==="CS")q.case=v.case;
     if(img){q.img=img.src;q.imgAR=img.ar;q.imgW=sizePct(v.imgSize)}
     const src=parseSources(v.src,v.year);if(src.length)q.src=src;
     if(concept)q.concept=concept;
@@ -993,7 +997,7 @@ function parseWord(paras){
   // finalise
   const res=qs.map((q,ix)=>{const n=ix+1;let type,text=q.lines.join("\n").trim(),issues=[],passage="";
     if(q.assert||(/assertion/i.test(text)&&q.reason)){type="AR";text=q.assert||text.replace(/^.*?assertion\s*(?:\(A\))?\s*[:\-–]\s*/is,"")}
-    else if(q.opts.filter(Boolean).length>=2)type="MCQ";
+    else if(q.opts.filter(Boolean).length>=2)type=[...q.src,...parseSources((text.match(/[\[(]([^\[\]()]{3,60})[\])]\s*$/)||[])[1]||"")].some(x=>/^(JEE|NEET)/.test(x.s))?"MCQJ":"MCQ";
     else if(/read the (following )?(passage|case|paragraph|text|source)|case\s*study|case\s*based/i.test(text)){type="CS";
       const ls=q.lines.slice();const intro=/^read the|case\s*(study|based)/i.test(ls[0]||"")?ls.shift():"";
       const subIx=ls.findIndex(l=>/^\(?(i|1|a)\)/i.test(l));passage=(subIx>0?ls.slice(0,subIx):ls.slice(0,1)).join(" ");text=(subIx>0?ls.slice(subIx):ls.slice(1)).join("\n")||intro}
@@ -1005,13 +1009,16 @@ function parseWord(paras){
     const tm=text.match(/\s*[\[(]([^\[\]()]{3,60})[\])]\s*$/);
     if(tm){const p=parseSources(tm[1]);if(p.length&&/\d{4}|ncert|exemplar|jee|neet|cbse|pyq|sample|board/i.test(tm[1])){for(const x of p)if(!src.some(y=>y.s===x.s&&y.y===x.y))src.push(x);text=text.slice(0,tm.index).trim()}}
     let ans=q.ans||key[n]||"";
-    if(type==="MCQ"){const o=[0,1,2,3].map(i=>(q.opts[i]||"").trim());if(o.some(x=>!x))issues.push("fewer than 4 options");q.opts=o;if(!/^[abcd]$/.test(ans)){if(ans)issues.push("answer is not a–d");else issues.push("no answer found");ans=/^[abcd]$/.test(ans)?ans:""}}
+    if(isMCQ(type)){const o=[0,1,2,3].map(i=>(q.opts[i]||"").trim());if(o.some(x=>!x))issues.push("fewer than 4 options");q.opts=o;if(!/^[abcd]$/.test(ans)){if(ans)issues.push("answer is not a–d");else issues.push("no answer found");ans=/^[abcd]$/.test(ans)?ans:""}}
     if(type==="AR"&&!q.reason)issues.push("Reason not found");
     if(type==="AR"&&!/^[abcd]$/.test(ans))issues.push("no answer found");
     if(type==="TF")ans=tfAns(ans);
-    const proof=/\b(prove|show)\s+that\b/i.test(text);
+    // "(3 Marks)" / "[2]" at the end of a written question sets its marks and Marker type
+    let marks=DEF_MARKS[type];const mm=text.match(/\s*[\[(]\s*(\d{1,2})\s*(?:marks?)?\s*[\])]\s*$/i);
+    if(mm&&+mm[1]>=1&&+mm[1]<=10){marks=+mm[1];text=text.slice(0,mm.index).trim();if(["M1","VSA","SA","LA"].includes(type))type={1:"M1",2:"VSA",3:"SA",5:"LA"}[marks]||type}
+    if(!["MCQ","MCQJ","AR","TF","CS"].includes(type)){if(/^\s*give\s+reasons?\b/i.test(text)){type="GR";if(!mm)marks=1}else if(/\b(prove|show)\s+that\b/i.test(text)){type="PR";if(!mm)marks=3}}
     if(!text)issues.push("question text is empty");
-    return {n,type,text,opts:q.opts,reason:q.reason,passage,ans,img:q.imgs[0]||null,issues,use:!!text,src,proof}});
+    return {n,type,type0:type,text,opts:q.opts,reason:q.reason,passage,ans,img:q.imgs[0]||null,issues,use:!!text,src,marks}});
   return {meta,qs:res};
 }
 let wdData=null;
@@ -1036,9 +1043,9 @@ function wdRender(){const {qs}=wdData;
     <select data-i="${i}" class="wdCon" aria-label="Concept for Q${q.n}"><option value="">Concept: same as above</option><option value="\u0000" ${q.concept==="\u0000"?"selected":""}>No concept</option>${cons.map(c=>`<option value="${esc(c)}" ${q.concept===c?"selected":""}>${esc(c)}</option>`).join("")}</select>
     <div class="wtxt">${q.passage?`<div class="opts">${esc(q.passage).slice(0,160)}…</div>`:""}${esc(q.type==="AR"?"A: "+q.text:q.text).replace(/\n/g,"<br>")}
       ${q.type==="AR"?`<div class="opts">R: ${esc(q.reason)}</div>`:""}
-      ${q.type==="MCQ"?`<div class="opts">${q.opts.map((o,j)=>"abcd"[j]+") "+(o?esc(o):"<i>missing</i>")).join(" &nbsp; ")}</div>`:""}
+      ${isMCQ(q.type)?`<div class="opts">${q.opts.map((o,j)=>"abcd"[j]+") "+(o?esc(o):"<i>missing</i>")).join(" &nbsp; ")}</div>`:""}
       ${q.img?`<img class="qthumb" src="${q.img.src}" alt="Diagram">`:""}
-      <div class="opts">${q.proof?`<span class="chip proofchip">Proof</span> `:""}${q.src&&q.src.length?`<span class="chip srcchip">${esc(srcText(q))}</span> `:""}Answer: <b>${esc(q.ans||"–")}</b>${q.issues.length?` · <span style="color:var(--warn)">${esc(q.issues.join(", "))}</span>`:""}</div></div></div>`).join("")||`<div class="empty">No numbered questions were found. Questions should start with Q1., 1. or Word's own numbering.</div>`;
+      <div class="opts">${q.marks?`<span class="chip">${q.marks} mark${q.marks==1?"":"s"}</span> `:""}${q.src&&q.src.length?`<span class="chip srcchip">${esc(srcText(q))}</span> `:""}Answer: <b>${esc(q.ans||"–")}</b>${q.issues.length?` · <span style="color:var(--warn)">${esc(q.issues.join(", "))}</span>`:""}</div></div></div>`).join("")||`<div class="empty">No numbered questions were found. Questions should start with Q1., 1. or Word's own numbering.</div>`;
   $("wdGo").disabled=!qs.some(q=>q.use);
 }
 $("wdCls").onchange=()=>{wdFill(0);wdRender()};
@@ -1065,8 +1072,8 @@ $("wdGo").onclick=async()=>{const cls=+$("wdCls").value,subject=$("wdSubject").v
   if(!subject){$("wdMsg").textContent="This class has no subjects. Add one in Admin → Syllabus.";return}
   if(!chapter){$("wdMsg").textContent="Choose a chapter, or type the new chapter's name.";return}
   const exam=$("wdExam").value.split(/[ ,\/]+/).map(x=>x.toUpperCase()).filter(Boolean);
-  const add=wdData.qs.filter(q=>q.use).map((q,k)=>{const o={exam:exam.length?exam:["CBSE"],cls,subject,chapter,type:q.type,text:q.text,ans:q.type==="TF"?tfAns(q.ans):q.ans,marks:DEF_MARKS[q.type]||1};if(q.proof)o.proof=true;
-    if(q.type==="MCQ")o.opts=q.opts.map(x=>x||"");if(q.type==="AR"){o.opts=AR_OPTS;o.reason=q.reason||""}if(q.type==="CS")o.case=q.passage||"";
+  const add=wdData.qs.filter(q=>q.use).map((q,k)=>{const o={exam:exam.length?exam:["CBSE"],cls,subject,chapter,type:q.type,text:q.text,ans:q.type==="TF"?tfAns(q.ans):q.ans,marks:q.marks&&q.type===q.type0?q.marks:DEF_MARKS[q.type]||1};
+    if(isMCQ(q.type))o.opts=q.opts.map(x=>x||"");if(q.type==="AR"){o.opts=AR_OPTS;o.reason=q.reason||""}if(q.type==="CS")o.case=q.passage||"";
     if(q.img){o.img=q.img.src;o.imgAR=q.img.ar;o.imgW=70}
     const common=$("wdSrc").value?[{s:$("wdSrc").value,y:/^(19|20)\d{2}$/.test($("wdYear").value.trim())?$("wdYear").value.trim():""}]:[];
     const sr=q.src&&q.src.length?q.src:common;if(sr.length)o.src=sr;
@@ -1170,7 +1177,7 @@ function qHTML(q,n){
   const st=settings.srcOn&&srcText(q)?`<div class="srcl">[${esc(srcText(q))}]</div>`:"";
   // no blank answer lines under written questions (removed on request)
   let b="";
-  if(q.type==="MCQ")b=`<div class="s">${mk}${esc(q.text)}</div>`+optsHTML(q.opts)+st;
+  if(isMCQ(q.type))b=`<div class="s">${mk}${esc(q.text)}</div>`+optsHTML(q.opts)+st;
   else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${esc(q.text)}</div><div class="s ar"><b>Reason (R):</b> ${esc(q.reason)}</div>`+optsHTML(AR_OPTS)+st;
   else if(q.type==="TF")b=`<div class="s">${mk}${esc(q.text)} <i>(True / False)</i></div>`+st;
   else if(q.type!=="CS")b=`<div class="s">${mk}${esc(q.text)}</div>`+st;   // FB, NUM, VSA, SA, LA
@@ -1181,6 +1188,12 @@ function qHTML(q,n){
     if(after)after.insertAdjacentHTML("afterend",im);b=tmp.innerHTML}
   const d=document.createElement("div");d.className="ws-q";d.innerHTML=`<span class="n ring">Q${n}</span><div class="qc">${b}</div>`;return d;
 }
+// Sections by marks: A = 1 mark, B = 2, C = 3, D = 4, E = 5; any other marks get F, G… after them.
+// Inside a section, questions follow the type list (MCQ, MCQ JEE/NEET, Fill in the Blanks…).
+const secOf=q=>+q.marks||DEF_MARKS[q.type]||1;
+function wsSort(qs){return qs.slice().sort((a,b)=>secOf(a)-secOf(b)||TYPE_ORDER.indexOf(a.type)-TYPE_ORDER.indexOf(b.type))}
+function secLetter(m,qs){if([1,2,3,4,5].includes(m))return "ABCDE"[m-1];
+  const extra=[...new Set(qs.map(secOf))].filter(x=>![1,2,3,4,5].includes(x)).sort((a,b)=>a-b);return String.fromCharCode(70+extra.indexOf(m))}
 // Answer as it goes in the key table: T / F for True-False
 function keyAns(q){const a=String(q.ans||"").trim();if(!a)return "–";if(q.type==="TF"){const t=tfAns(a);return t==="True"?"T":t==="False"?"F":t}return a}
 // Split question q so that everything above `limit` (px) stays; returns the continuation question, or null if nothing fits.
@@ -1208,13 +1221,13 @@ function splitQ(q,limit){
 function build(){
   const M=$("measure");M.innerHTML="";
   let qs=[...picked.values()].map(q=>q.hasImg?{...q,img:imgCache[q.id]||null}:q);
-  if(settings.group)qs=qs.slice().sort((a,b)=>TYPE_ORDER.indexOf(a.type)-TYPE_ORDER.indexOf(b.type));
+  if(settings.group)qs=wsSort(qs);
   if(!qs.length){return []}
   const items=[];let last=null,sec=0;
-  qs.forEach((q,i)=>{if(settings.group&&q.type!==last){const s=document.createElement("div");s.className="ws-sec";s.textContent=`Section ${"ABCDEFGHI"[sec++]} – ${TYPES[q.type]||q.type}`;items.push(s);last=q.type}items.push(qHTML(q,i+1))});
+  qs.forEach((q,i)=>{if(settings.group&&secOf(q)!==last){const s=document.createElement("div");s.className="ws-sec";s.textContent=`Section ${secLetter(secOf(q),qs)}`;items.push(s);last=secOf(q)}items.push(qHTML(q,i+1))});
   if(settings.key){
     // short answers (MCQ, FB, T/F, AR, Numerical) in a table; written answers listed below it
-    const all=qs.map((q,i)=>({n:i+1,q})).filter(x=>!x.q.proof);   // proving questions have no key entry
+    const all=qs.map((q,i)=>({n:i+1,q})).filter(x=>!isProof(x.q));   // proving questions have no key entry
     const obj=all.filter(x=>KEY_TABLE.has(x.q.type)),wr=all.filter(x=>!KEY_TABLE.has(x.q.type));
     if(obj.length||wr.length){
       const h=document.createElement("div");h.className="ws-sec";h.textContent="Answer Key";items.push(h);
@@ -1284,7 +1297,7 @@ async function renderPreview(){
 }
 // Teacher's "Diagram sizes" list (rebuilt only when the set of diagrams changes, so sliding stays smooth)
 let iszSig="";
-function wsOrder(){const qs=[...picked.values()];return settings.group?qs.slice().sort((a,b)=>TYPE_ORDER.indexOf(a.type)-TYPE_ORDER.indexOf(b.type)):qs}
+function wsOrder(){const qs=[...picked.values()];return settings.group?wsSort(qs):qs}
 function renderImgSizes(){
   const list=wsOrder().map((q,i)=>({q,n:i+1})).filter(x=>x.q.hasImg&&imgCache[x.q.id]);
   $("imgSizesPanel").hidden=!list.length;
@@ -1578,21 +1591,32 @@ async function sylAction(act, i) {
   }
 }
 
-// ================= Admin: old 2-mark Short Answers become Very Short Answers =================
+// ================= Admin: bring old questions to the new types =================
+// 4-mark MCQ -> MCQ JEE/NEET, "Proof" tag -> Proof type, 2-mark Short Answer -> 2 Marker
+const UPGRADES = [
+  { f: { type: "MCQ", marks: 4 }, patch: { type: "MCQJ" }, label: "4-mark MCQ → MCQ – JEE/NEET" },
+  { f: { proof: true }, patch: { type: "PR", proof: null }, label: "Tagged “Proof” → Proof" },
+  { f: { type: "SA", marks: 2 }, patch: { type: "VSA" }, label: "2-mark Short Answer → 2 Marker" }
+];
 $("vsaBtn").onclick = async () => {
-  const f = { type: "SA", marks: 2 }; let n = 0;
-  toast("Checking questions…");
-  try { n = await api.countQuestions(f); } catch (e) { toast("Could not check. Check your internet."); return; }
+  toast("Checking questions…"); let counts;
+  try { counts = await Promise.all(UPGRADES.map(u => api.countQuestions(u.f))); } catch (e) { toast("Could not check. Check your internet."); return; }
   $("toast").hidden = true;
-  if (!n) { await ask({ title: "Nothing to change", html: `<p style="margin:0">There are no Short Answer questions with 2 marks. Everything is already up to date.</p>`, buttons: [{ label: "OK", value: null, cls: "primary" }] }); return; }
-  const v = await ask({ title: "Change to Very Short Answer?", html: `<p style="margin:0"><b>${n} Short Answer question${n === 1 ? " has" : "s have"}</b> 2 marks. They will become <b>Very Short Answer (VSA)</b>. Nothing else changes.</p>`,
-    buttons: [{ label: "Cancel", value: null }, { label: `Change ${n}`, value: "ok", cls: "primary" }] });
+  const total = counts.reduce((a, b) => a + b, 0);
+  if (!total) { await ask({ title: "Nothing to update", html: `<p style="margin:0">All questions already use the new types.</p>`, buttons: [{ label: "OK", value: null, cls: "primary" }] }); return; }
+  const v = await ask({ title: "Update old questions?", html: `<p style="margin:0">These questions will move to the new types. Nothing else changes.</p><ul style="margin:8px 0 0;padding-left:20px">${UPGRADES.map((u, i) => counts[i] ? `<li><b>${counts[i]}</b> × ${esc(u.label)}</li>` : "").join("")}</ul>`,
+    buttons: [{ label: "Cancel", value: null }, { label: `Update ${total}`, value: "ok", cls: "primary" }] });
   if (v !== "ok") return;
   await busy("Updating…", async () => {
-    const done = await api.updateQuestions(f, { type: "VSA" }, d => toast(`Updating… ${d} questions`, 60000));
-    patchPicked(f, { type: "VSA" }); current = current.map(q => q.type === "SA" && +q.marks === 2 ? { ...q, type: "VSA" } : q);
-    toast(`${done} question${done === 1 ? "" : "s"} changed to Very Short Answer`);
+    let done = 0;
+    for (let i = 0; i < UPGRADES.length; i++) if (counts[i]) {
+      const u = UPGRADES[i]; done += await api.updateQuestions(u.f, u.patch, d => toast(`Updating… ${done + d} questions`, 60000));
+      patchPicked(u.f, u.patch);
+      current = current.map(q => Object.entries(u.f).every(([k, val]) => (k === "marks" ? +q[k] : q[k]) === val) ? Object.fromEntries(Object.entries({ ...q, ...u.patch }).filter(([, x]) => x != null)) : q);
+    }
+    toast(`${done} question${done === 1 ? "" : "s"} updated to the new types`);
   });
+  if (nav.chapter) renderList();
 };
 
 // ================= Admin: sample questions =================
@@ -1674,7 +1698,7 @@ function pptBlocks(q, n, imgPng) {
   else T(q.text + (q.type === "TF" ? " (True / False)" : ""), { label: `Q${n}` });
   if (imgPng) B.push({ k: "img", pct: effW(q), ...imgPng });
   if (q.type === "CS") (q.text || "").split("\n").filter(Boolean).forEach(t => T(t));
-  if (q.type === "MCQ" || q.type === "AR") {
+  if (isMCQ(q.type) || q.type === "AR") {
     const opts = q.type === "AR" ? AR_OPTS : (q.opts || []);
     opts.forEach((o, i) => B.push({ k: "opt", label: "abcd"[i] + ")", text: o || "", optIndex: i, optCount: opts.length, all: opts }));
   }
@@ -1770,7 +1794,7 @@ async function makePpt(opts) {
   const qs0 = [...picked.values()];
   if (!qs0.length) { toast("Tick at least one question first"); return null; }
   if (!window.PptxGenJS) { toast("PowerPoint tools did not load. Check your internet and reload."); return null; }
-  const qs = settings.group ? qs0.slice().sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type)) : qs0;
+  const qs = settings.group ? wsSort(qs0) : qs0;
   const pptx = new PptxGenJS(); pptx.layout = "LAYOUT_WIDE";
   pptx.author = settings.teacher || ""; pptx.company = settings.academy || ""; pptx.title = settings.topic || "Worksheet";
   const logo = settings.logo ? await toPng(settings.logo) : null;
@@ -1792,7 +1816,7 @@ async function makePpt(opts) {
     const x0 = PPT.W - RIGHT_PAD - w;
     pages.forEach((items, pi) => {
       const s = pptx.addSlide();
-      pptChrome(pptx, s, q.concept || q.chapter, `Q ${n}${pi ? " (cont.)" : ""} / ${N}`, logo);
+      pptChrome(pptx, s, q.concept || q.chapter, `${settings.group ? "Sec " + secLetter(secOf(q), qs) + " · " : ""}Q ${n}${pi ? " (cont.)" : ""} / ${N}`, logo);
       for (const it of items) {
         const x = x0 + it.x, y = BODY_TOP + it.y;
         if (it.k === "img") { s.addImage({ data: it.data, x, y, w: it.w, h: it.h }); continue; }
@@ -1818,7 +1842,7 @@ async function makePpt(opts) {
     });
   }
   if (opts.key) {
-    const all = qs.map((q, i) => ({ n: i + 1, q })).filter(x => !x.q.proof);   // proving questions have no key entry
+    const all = qs.map((q, i) => ({ n: i + 1, q })).filter(x => !isProof(x.q));   // proving questions have no key entry
     const keyed = all.filter(x => KEY_TABLE.has(x.q.type)), written = all.filter(x => !KEY_TABLE.has(x.q.type));
     if (keyed.length) {
       const mx = Math.max(0, ...keyed.map(x => keyAns(x.q).length)), per = mx <= 2 ? 10 : mx <= 6 ? 8 : mx <= 10 ? 6 : 4, rowsPerSlide = 8;            // 4 Q/Ans pairs per slide

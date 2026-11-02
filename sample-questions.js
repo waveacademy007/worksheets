@@ -1,5 +1,5 @@
 // Sample questions the admin can load with one click (Admin > Load sample questions)
-import { AR_OPTS } from "./constants.js?v=2.6";
+import { AR_OPTS } from "./constants.js?v=2.7";
 const H=(c,ch,t,o,a,ex)=>({exam:ex||["CBSE","NEET"],cls:10,subject:"Biology",chapter:"Life Processes",concept:"Human Heart",type:"MCQ",text:t,opts:o,ans:a,marks:1,src:[{s:"NCERT",y:""}]});
 export const SAMPLE=[
 H(0,0,"From the perspective of mechanics, the human heart operates essentially as which type of device?",["A heat engine","A lever of the third class","An electric generator","A hydraulic force pump"],"d"),
@@ -31,9 +31,9 @@ H(0,0,"The state of persistent high blood pressure (hypertension) is predominant
 {exam:["CBSE"],cls:10,subject:"Maths",chapter:"Quadratic Equations",concept:"Roots and Discriminant",type:"MCQ",text:"The discriminant of x² − 4x + 4 = 0 is:",opts:["0","4","8","16"],ans:"a",marks:1},
 {exam:["CBSE"],cls:9,subject:"Maths",chapter:"Number Systems",type:"MCQ",text:"Which of the following is an irrational number?",opts:["√16","0.333…","√7","22/7"],ans:"c",marks:1},
 {exam:["CBSE"],cls:9,subject:"Physics",chapter:"Motion",concept:"Acceleration",type:"VSA",text:"A car accelerates uniformly from 18 km/h to 36 km/h in 5 s. Calculate its acceleration.",ans:"u = 5 m/s, v = 10 m/s, a = 1 m/s²",marks:2},
-{exam:["JEE","CBSE"],src:[{s:"JEE",y:"2019"},{s:"NCERT Exemplar",y:""}],cls:11,subject:"Physics",chapter:"Motion in a Straight Line",concept:"Motion under Gravity",type:"MCQ",text:"A ball is thrown vertically upward with speed 20 m/s. Taking g = 10 m/s², the maximum height reached is:",opts:["10 m","20 m","40 m","30 m"],ans:"b",marks:4},
-{exam:["JEE","NEET"],cls:11,subject:"Chemistry",chapter:"Some Basic Concepts of Chemistry",type:"MCQ",text:"The number of moles in 9 g of water is:",opts:["0.25","0.5","1","2"],ans:"b",marks:4},
-{exam:["NEET","CBSE"],cls:12,subject:"Physics",chapter:"Current Electricity",type:"MCQ",text:"Kirchhoff's junction rule is based on the conservation of:",opts:["Energy","Charge","Momentum","Mass"],ans:"b",marks:4},
-{exam:["JEE","CBSE"],cls:12,subject:"Maths",chapter:"Integrals",type:"MCQ",text:"∫ 1/x dx (x > 0) is equal to:",opts:["x² / 2 + C","ln x + C","1/x² + C","eˣ + C"],ans:"b",marks:4},
-{exam:["NEET"],src:[{s:"NEET",y:"2021"}],cls:12,subject:"Biology",chapter:"Molecular Basis of Inheritance",type:"MCQ",text:"The enzyme that joins Okazaki fragments during DNA replication is:",opts:["DNA polymerase","Helicase","DNA ligase","Primase"],ans:"c",marks:4}
+{exam:["JEE","CBSE"],src:[{s:"JEE",y:"2019"},{s:"NCERT Exemplar",y:""}],cls:11,subject:"Physics",chapter:"Motion in a Straight Line",concept:"Motion under Gravity",type:"MCQJ",text:"A ball is thrown vertically upward with speed 20 m/s. Taking g = 10 m/s², the maximum height reached is:",opts:["10 m","20 m","40 m","30 m"],ans:"b",marks:4},
+{exam:["JEE","NEET"],cls:11,subject:"Chemistry",chapter:"Some Basic Concepts of Chemistry",type:"MCQJ",text:"The number of moles in 9 g of water is:",opts:["0.25","0.5","1","2"],ans:"b",marks:4},
+{exam:["NEET","CBSE"],cls:12,subject:"Physics",chapter:"Current Electricity",type:"MCQJ",text:"Kirchhoff's junction rule is based on the conservation of:",opts:["Energy","Charge","Momentum","Mass"],ans:"b",marks:4},
+{exam:["JEE","CBSE"],cls:12,subject:"Maths",chapter:"Integrals",type:"MCQJ",text:"∫ 1/x dx (x > 0) is equal to:",opts:["x² / 2 + C","ln x + C","1/x² + C","eˣ + C"],ans:"b",marks:4},
+{exam:["NEET"],src:[{s:"NEET",y:"2021"}],cls:12,subject:"Biology",chapter:"Molecular Basis of Inheritance",type:"MCQJ",text:"The enzyme that joins Okazaki fragments during DNA replication is:",opts:["DNA polymerase","Helicase","DNA ligase","Primase"],ans:"c",marks:4}
 ];

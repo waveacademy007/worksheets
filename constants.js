@@ -1,9 +1,14 @@
 // Fixed lists used across the app
-export const TYPES={MCQ:"MCQ",FB:"Fill in the Blank",TF:"True / False",AR:"Assertion–Reason",NUM:"Numerical",VSA:"Very Short Answer",SA:"Short Answer",LA:"Long Answer",CS:"Case Study"};
-// Section order on the worksheet, default marks, and which answers fit in the answer-key table
-export const TYPE_ORDER=["MCQ","FB","TF","AR","NUM","VSA","SA","CS","LA"];
-export const DEF_MARKS={MCQ:1,FB:1,TF:1,AR:1,NUM:4,VSA:2,SA:3,LA:5,CS:4};
-export const KEY_TABLE=new Set(["MCQ","FB","TF","AR","NUM"]);
+// Internal codes stay short; VSA / SA / LA are the old names of 2 / 3 / 5 Marker, so old questions keep working
+export const TYPES={MCQ:"MCQ",MCQJ:"MCQ – JEE/NEET",FB:"Fill in the Blanks",TF:"True / False",AR:"Assertion / Reason",GR:"Give Reason",NUM:"Numerical Type",
+  M1:"1 Marker",VSA:"2 Marker",SA:"3 Marker",PR:"Proof",CS:"Case Study",LA:"5 Marker"};
+export const TYPE_ORDER=["MCQ","MCQJ","FB","TF","AR","GR","NUM","M1","VSA","SA","PR","CS","LA"];
+export const DEF_MARKS={MCQ:1,MCQJ:4,FB:1,TF:1,AR:1,GR:1,NUM:4,M1:1,VSA:2,SA:3,PR:3,CS:4,LA:5};
+// answers short enough for the answer-key table
+export const KEY_TABLE=new Set(["MCQ","MCQJ","FB","TF","AR","NUM"]);
+export const isMCQ=t=>t==="MCQ"||t==="MCQJ";
+// proving questions never appear in the answer key (old ones were tagged, new ones are type PR)
+export const isProof=q=>q.type==="PR"||!!q.proof;
 // "t", "true", "T" -> "True"
 export const tfAns=a=>/^\s*t(rue)?\s*$/i.test(a||"")?"True":/^\s*f(alse)?\s*$/i.test(a||"")?"False":(a||"");
 export const AR_OPTS=["Both A and R are true and R is the correct explanation of A.","Both A and R are true but R is not the correct explanation of A.","A is true but R is false.","A is false but R is true."];
