@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=3.0";
+import { createApi, DEMO } from "./api.js?v=3.2";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.0";
-import { SAMPLE } from "./sample-questions.js?v=3.0";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.0";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.2";
+import { SAMPLE } from "./sample-questions.js?v=3.2";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.2";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "3.0";
+const APP_VERSION = "3.2";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -60,7 +60,7 @@ const FONTS = {
 };
 const DEFAULTS = { academy: "", teacher: "", phone: "", wm: "", logo: "", logoSize: 25, cls: "", topic: "",
   group: false, marks: false, key: true, wmOn: true, srcOn: false, font: "garamond", imgSizes: {},
-  tp: false, tpTime: "", tpMM: "", tpIns: "" };
+  tp: false, tpTime: "", tpMM: "", tpIns: "", tpNeg: "1", tpAns: true, tpEval: true };
 // Test paper: default instructions (teacher can change them; empty = no box)
 const TP_INS = "All questions are compulsory.\nMarks for each question are shown against it.\nUse of calculator is not allowed.";
 DEFAULTS.tpIns = TP_INS;
@@ -302,8 +302,8 @@ function saveSet() {
   }, 900);
   paintAvatars(); $("drPhone").textContent = settings.phone || "";
 }
-const bind = [["sAcademy", "academy"], ["sTeacher", "teacher"], ["sPhone", "phone"], ["sWm", "wm"], ["wClass", "cls"], ["wTopic", "topic"], ["wTpTime", "tpTime"], ["wTpMM", "tpMM"], ["wTpIns", "tpIns"]];
-const checks = [["wGroup", "group"], ["wMarks", "marks"], ["wKey", "key"], ["wWm", "wmOn"], ["wSrc", "srcOn"]];
+const bind = [["sAcademy", "academy"], ["sTeacher", "teacher"], ["sPhone", "phone"], ["sWm", "wm"], ["wClass", "cls"], ["wTopic", "topic"], ["wTpTime", "tpTime"], ["wTpMM", "tpMM"], ["wTpIns", "tpIns"], ["wTpNeg", "tpNeg"]];
+const checks = [["wGroup", "group"], ["wMarks", "marks"], ["wKey", "key"], ["wWm", "wmOn"], ["wSrc", "srcOn"], ["wTpAns", "tpAns"], ["wTpEval", "tpEval"]];
 bind.forEach(([id, k]) => $(id).addEventListener("input", () => { settings[k] = $(id).value; saveSet(); schedule(); }));
 checks.forEach(([id, k]) => $(id).addEventListener("change", () => { settings[k] = $(id).checked; saveSet(); schedule(); }));
 $("wFont").onchange = () => { settings.font = $("wFont").value; saveSet(); schedule(); };
@@ -585,7 +585,7 @@ async function loadPickedImages() {
 // ================= My Worksheets & Drafts =================
 let currentDraft = null;           // {id, name} while editing a draft
 let lastSavedSig = "";
-const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "srcOn", "font", "imgSizes", "tp", "tpTime", "tpMM", "tpIns"];
+const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "srcOn", "font", "imgSizes", "tp", "tpTime", "tpMM", "tpIns", "tpNeg", "tpAns", "tpEval"];
 // Diagram size: the teacher's choice for this worksheet, else the admin's default
 const effW = q => ((settings.imgSizes || {})[q.id]) || q.imgW || 70;
 function snapshot(kind, name) {
@@ -1275,7 +1275,9 @@ function optsHTML(list){const one=(o,i)=>`<div class="o"><span class="l">${"abcd
 function qHTML(q,n){
   const mk=settings.marks?`<span class="mk">[${q.marks}]</span>`:"";
   // source & year: own line at the end of the question, right side, bold
-  const st=settings.srcOn&&srcText(q)?`<div class="srcl">[${esc(srcText(q))}]</div>`:"";
+  // test paper: objective questions get an answer box (on the source line when there is one)
+  const ab=settings.tp&&settings.tpAns!==false&&KEY_TABLE.has(q.type)?`<span class="ab">Ans. <i class="${q.type==="FB"||q.type==="NUM"?"w":""}"></i></span>`:"";
+  const st=settings.srcOn&&srcText(q)?`<div class="srcl${ab?" abrow":""}"><span>[${esc(srcText(q))}]</span>${ab}</div>`:ab?`<div class="abrow">${ab}</div>`:"";
   // no blank answer lines under written questions (removed on request)
   let b="";
   if(isMCQ(q.type))b=`<div class="s">${mk}${mt(q.text)}</div>`+optsHTML(q.opts)+st;
@@ -1329,6 +1331,18 @@ function build(){
   if(!qs.length){return []}
   const items=[];let last=null,sec=0;
   qs.forEach((q,i)=>{if(settings.group&&secOf(q)!==last){const s=document.createElement("div");s.className="ws-sec";s.textContent=`Section ${secLetter(secOf(q),qs)}`;items.push(s);last=secOf(q)}items.push(qHTML(q,i+1))});
+  if(settings.tp&&settings.tpEval!==false){
+    const neg=Math.abs(parseFloat(settings.tpNeg)||0),mk=[...new Set(qs.map(q=>+q.marks||DEF_MARKS[q.type]||1))];
+    const ev=document.createElement("div");ev.className="ev atom";
+    ev.innerHTML=`<h4><span>Evaluation</span><span>For teacher's use</span></h4><table>
+      <tr><th></th><th>Number</th><th>Marks</th></tr>
+      <tr><td>Correct answers${mk.length===1?` <small>(× ${mk[0]})</small>`:""}</td><td></td><td></td></tr>
+      <tr><td>Incorrect answers${neg?` <small>(× −${neg})</small>`:""}</td><td></td><td>${neg?"":"0"}</td></tr>
+      <tr><td>Not attempted</td><td></td><td>0</td></tr>
+      <tr class="tot"><td>Total marks</td><td colspan="2" class="tm">______ / ${esc(tpVals().mm)}</td></tr></table>
+      <div class="sig"><span>Checked by: <i></i></span><span>Signature: <i></i></span></div>`;
+    items.push(ev);
+  }
   if(settings.key){
     // short answers (MCQ, FB, T/F, AR, Numerical) in a table; written answers listed below it
     const all=qs.map((q,i)=>({n:i+1,q})).filter(x=>!isProof(x.q));   // proving questions have no key entry

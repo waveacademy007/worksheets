@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
-<link rel="stylesheet" href="app.css?v=3.0">
+<link rel="stylesheet" href="app.css?v=3.2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js" defer></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -154,8 +154,13 @@
         <div class="row2">
           <label class="f">Time<input type="text" id="wTpTime" placeholder="Auto"></label>
           <label class="f">M.M. (maximum marks)<input type="text" id="wTpMM" inputmode="numeric" placeholder="Auto"></label>
+          <label class="f">Marks cut for a wrong answer<input type="text" id="wTpNeg" inputmode="decimal" placeholder="1"></label>
         </div>
-        <p class="note" style="margin:0">Leave Time and M.M. empty to work them out automatically: 5 minutes per question, and the marks of the ticked questions added up.</p>
+        <p class="note" style="margin:0">Leave Time and M.M. empty to work them out automatically: 5 minutes per question, and the marks of the ticked questions added up. Write 0 in "Marks cut" if there is no negative marking. </p>
+        <div class="row2">
+          <label class="check"><input type="checkbox" id="wTpAns" checked> Answer box for each question (Ans. ☐)</label>
+          <label class="check"><input type="checkbox" id="wTpEval" checked> Evaluation box at the end</label>
+        </div>
         <label class="f">General instructions (one per line; empty = no box)<textarea id="wTpIns" rows="4"></textarea></label>
         <div class="bar" style="margin:0"><button class="link" type="button" id="tpInsDef">Use the default instructions</button></div>
       </div>
@@ -507,6 +512,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
-<script type="module" src="app.js?v=3.0"></script>
+<script type="module" src="app.js?v=3.2"></script>
 </body>
 </html>

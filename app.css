@@ -530,3 +530,21 @@ input[type=range]{width:100%;accent-color:var(--accent);padding:0;border:0;backg
 .tp-ins{border:1px solid #333;border-radius:4px;padding:6px 10px;margin:8px 0 4px;font-size:12.5px;line-height:1.45}
 .tp-ins b{display:block;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
 .tp-ins ol{margin:0;padding-left:18px}
+
+/* ---- v3.1: answer box and evaluation box (test paper) ---- */
+.ws-q .abrow{display:flex;justify-content:flex-end;align-items:center;gap:14px;margin-top:3px}
+.ws-q .srcl.abrow span:first-child{font-weight:700}
+.ws-q .ab{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:.95em;white-space:nowrap}
+.ws-q .ab i{display:inline-block;width:38px;height:24px;border:1.5px solid #111;border-radius:3px}
+.ws-q .ab i.w{width:74px}
+.ev{border:1.5px solid #111;border-radius:6px;margin:14px 0 10px;font-size:13.5px}
+.ev h4{margin:0;padding:5px 10px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;border-bottom:1.5px solid #111;background:#f3f3f3;display:flex;justify-content:space-between}
+.ev table{width:100%;border-collapse:collapse}
+.ev td,.ev th{border-top:1px solid #999;padding:7px 8px;text-align:left}
+.ev th{font-size:12px;font-weight:700;border-top:0;background:#fafafa}
+.ev td+td,.ev th+th{border-left:1px solid #999;text-align:center;width:22%}
+.ev td.tm{text-align:right}
+.ev tr.tot td{font-weight:800;border-top:1.5px solid #111}
+.ev .sig{display:flex;justify-content:space-between;gap:10px;padding:14px 10px 8px;font-size:12.5px;border-top:1px solid #999}
+.ev .sig span{display:flex;align-items:flex-end;white-space:nowrap}
+.ev .sig i{display:inline-block;width:77px;border-bottom:1px solid #333;margin-left:4px;height:12px}   /* 10% longer than before */
