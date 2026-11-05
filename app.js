@@ -1,19 +1,46 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=2.7";
+import { createApi, DEMO } from "./api.js?v=2.8";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.7";
-import { SAMPLE } from "./sample-questions.js?v=2.7";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.7";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.8";
+import { SAMPLE } from "./sample-questions.js?v=2.8";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.8";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "2.7";
+const APP_VERSION = "2.8";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// Maths is kept inside $…$ (LaTeX) in question text and drawn with KaTeX; the rest is plain text
+const MATH_RE = /\$([^$\n]+)\$/g;
+const hasMath = s => /\$[^$\n]+\$/.test(String(s || ""));
+function texHTML(tex) {
+  if (!window.katex) return esc(tex);
+  // newlines inside KaTeX's drawings (√, vector arrows) must not turn into <br> later
+  try { return katex.renderToString(tex, { throwOnError: false, strict: "ignore", output: "html" }).replace(/\n/g, " "); } catch (e) { return esc(tex); }
+}
+// text with maths -> HTML (newlines are left to the caller)
+function mt(s) {
+  s = String(s ?? ""); let out = "", last = 0;
+  for (const m of s.matchAll(MATH_RE)) { out += esc(s.slice(last, m.index)) + texHTML(m[1]); last = m.index + m[0].length; }
+  return out + esc(s.slice(last));
+}
+// rough one-line version of the maths, for places that need plain text
+const TEX_SYM = { times: "×", cdot: "·", pm: "±", mp: "∓", approx: "≈", propto: "∝", neq: "≠", ne: "≠", leq: "≤", le: "≤", geq: "≥", ge: "≥", infty: "∞", circ: "°", degree: "°", angle: "∠", perp: "⊥", parallel: "∥",
+  rightarrow: "→", to: "→", Rightarrow: "⇒", rightleftharpoons: "⇌", therefore: "∴", because: "∵", hbar: "ℏ", int: "∫", oint: "∮", iint: "∬", sum: "Σ", prod: "Π", partial: "∂", Delta: "Δ", nabla: "∇",
+  alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", varepsilon: "ε", theta: "θ", lambda: "λ", mu: "μ", nu: "ν", pi: "π", rho: "ρ", sigma: "σ", tau: "τ", phi: "φ", varphi: "φ", omega: "ω", Omega: "Ω", Phi: "Φ", Sigma: "Σ", Lambda: "Λ", Theta: "Θ", Gamma: "Γ", eta: "η", chi: "χ", psi: "ψ", kappa: "κ", zeta: "ζ", xi: "ξ",
+  sin: "sin ", cos: "cos ", tan: "tan ", cot: "cot ", sec: "sec ", csc: "cosec ", log: "log ", ln: "ln ", lim: "lim ", equiv: "≡", sim: "~", square: "□" };
+function texPlain(t) {
+  let s = t;
+  for (let k = 0; k < 4; k++) s = s.replace(/\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}/g, (m, a, b) => `${a.length > 1 ? "(" + a + ")" : a}/${b.length > 1 ? "(" + b + ")" : b}`)
+    .replace(/\\sqrt\[([^\]]*)\]\{([^{}]*)\}/g, "$1√($2)").replace(/\\sqrt\{([^{}]*)\}/g, "√($1)").replace(/\\(vec|hat|bar|overline|dot|ddot|tilde|text|mathrm|mathbf|operatorname)\{([^{}]*)\}/g, (m, c, a) => a + ({ vec: "⃗", hat: "̂", bar: "̄", overline: "̄", dot: "̇", ddot: "̈", tilde: "̃" }[c] || ""));
+  return s.replace(/\\(left|right|big|Big|bigg|Bigg)\b/g, "").replace(/\\begin\{[a-z]*\}|\\end\{[a-z]*\}/g, "").replace(/\\\\/g, "; ").replace(/&/g, " ")
+    .replace(/\\([a-zA-Z]+)/g, (m, n) => TEX_SYM[n] ?? n).replace(/\\[,;! ]/g, " ").replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
+}
+const plain = s => String(s ?? "").replace(MATH_RE, (m, t) => texPlain(t));
 const roman = c => ({ 9: "IX", 10: "X", 11: "XI", 12: "XII" }[c] || c);
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
@@ -450,10 +477,10 @@ function renderList() {
   $("qlist").innerHTML = list.length ? list.map(q => `<label class="q ${picked.has(q.id) ? "on" : ""}" data-id="${esc(q.id)}">
     <input type="checkbox" ${picked.has(q.id) ? "checked" : ""} aria-label="Use this question">
     <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span>${q.concept && !fConcept ? `<span class="chip conchip">${esc(q.concept)}</span>` : ""}<span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.proof && q.type !== "PR" ? `<span class="chip proofchip">Proof</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}</div>
-    ${q.case ? `<div class="opts">${esc(q.case)}</div>` : ""}<div>${esc(q.text).replace(/\n/g, "<br>")}</div>
-    ${q.type === "AR" ? `<div class="opts">R: ${esc(q.reason)}</div>` : ""}${q.type === "TF" ? `<div class="opts">(True / False)</div>` : ""}
+    ${q.case ? `<div class="opts">${mt(q.case)}</div>` : ""}<div>${mt(q.text).replace(/\n/g, "<br>")}</div>
+    ${q.type === "AR" ? `<div class="opts">R: ${mt(q.reason)}</div>` : ""}${q.type === "TF" ? `<div class="opts">(True / False)</div>` : ""}
     ${q.hasImg ? `<img class="qthumb${imgCache[q.id] ? "" : " loading"}" data-qimg="${esc(q.id)}" alt="Diagram, tap to enlarge"${imgCache[q.id] ? ` src="${imgCache[q.id]}"` : ""}>` : ""}
-    ${isMCQ(q.type) ? `<div class="opts">${(q.opts || []).map((o, i) => "abcd"[i] + ") " + esc(o)).join(" &nbsp; ")}</div>` : ""}
+    ${isMCQ(q.type) ? `<div class="opts">${(q.opts || []).map((o, i) => "abcd"[i] + ") " + mt(o)).join(" &nbsp; ")}</div>` : ""}
     ${profile.admin ? `<div class="qadm"><button class="btn qedit" type="button" data-edit="${esc(q.id)}">Edit</button><button class="btn qdel" type="button" data-del="${esc(q.id)}">Delete</button></div>` : ""}</div></label>`).join("")
     : `<div class="empty">${total ? "No questions match this filter." : "No questions in this chapter yet."}</div>`;
   watchThumbs();
@@ -874,6 +901,50 @@ const ln=el=>el.localName;
 const kids=(el,name)=>[...el.children].filter(c=>ln(c)===name);
 const kid=(el,name)=>[...el.children].find(c=>ln(c)===name);
 const attr=(el,name)=>{if(!el)return null;for(const a of el.attributes)if(a.localName===name)return a.value;return null};
+// Word equation (OMML) to LaTeX, so it is kept as a real equation: $\frac{a}{b}$, $\int_0^1$, $\vec{F}$ …
+const TEX_CHR={"∫":"\\int","∬":"\\iint","∭":"\\iiint","∮":"\\oint","∑":"\\sum","∏":"\\prod","⋃":"\\bigcup","⋂":"\\bigcap"};
+const TEX_DELIM={"(":"(",")":")","[":"[","]":"]","{":"\\{","}":"\\}","|":"|","‖":"\\|","⟨":"\\langle","⟩":"\\rangle","⌊":"\\lfloor","⌋":"\\rfloor","⌈":"\\lceil","⌉":"\\rceil","":"."};
+const TEX_ACC={"\u0302":"\\hat","^":"\\hat","\u20d7":"\\vec","→":"\\vec","\u20d1":"\\vec","\u0305":"\\bar","¯":"\\bar","\u0304":"\\bar","\u0307":"\\dot","˙":"\\dot","\u0308":"\\ddot","¨":"\\ddot","~":"\\tilde","\u0303":"\\tilde"};
+const TEX_UNI={"×":"\\times ","·":"\\cdot ","⋅":"\\cdot ","±":"\\pm ","∓":"\\mp ","≈":"\\approx ","∝":"\\propto ","≠":"\\neq ","≤":"\\leq ","≥":"\\geq ","∞":"\\infty ","→":"\\rightarrow ","⇒":"\\Rightarrow ","⇌":"\\rightleftharpoons ","∴":"\\therefore ","∵":"\\because ","∂":"\\partial ","∇":"\\nabla ","Δ":"\\Delta ","∠":"\\angle ","⊥":"\\perp ","∥":"\\parallel ","°":"^{\\circ}","−":"-","ℏ":"\\hbar ","…":"\\ldots ","′":"'"};
+function texEsc(t){return t.replace(/\\/g,"\\backslash ").replace(/([{}%#&_$])/g,"\\$1").replace(/\^/g,"\\hat{}").replace(/[×·⋅±∓≈∝≠≤≥∞→⇒⇌∴∵∂∇Δ∠⊥∥°−ℏ…′]/g,c=>TEX_UNI[c])}
+function ommlTex(n){const name=ln(n),c=k=>{const e=kid(n,k);return e?ommlTex(e):""};const pr=k=>kid(n,k);
+  const val=(prName,child,def)=>{const p=pr(prName);const e=p&&kid(p,child);const v=attr(e,"val");return v==null?def:v};
+  switch(name){
+    case "t":return texEsc(n.textContent);
+    case "r":{const rp=kid(n,"rPr");const sty=attr(rp&&kid(rp,"sty"),"val");const nor=rp&&kid(rp,"nor");
+      const txt=[...n.children].filter(x=>ln(x)==="t").map(x=>x.textContent).join("");if(!txt)return "";
+      if(nor||(/\s/.test(txt.trim())&&/[a-z]{2,}/i.test(txt)))return "\\text{"+txt.replace(/[{}\\]/g,"")+"}";
+      const body=texEsc(txt).replace(/ /g,"\\ ");
+      if(/^\s*(sin|cos|tan|cot|sec|csc|log|ln|exp|lim|max|min|det)\s*$/.test(txt))return "\\"+txt.trim()+" ";   // function names upright
+      if(sty==="p"&&/[A-Za-z]{2,}/.test(txt)){return txt.trim().match(/^(sin|cos|tan|cot|sec|csc|log|ln|exp|lim|max|min|det)$/)?"\\"+txt.trim()+" ":"\\mathrm{"+body+"}"}
+      if(sty==="b"||sty==="bi")return "\\mathbf{"+body+"}";return body}
+    case "f":{const tp=val("fPr","type","bar");const a=c("num"),b=c("den");return tp==="lin"||tp==="skw"?`{${a}}/{${b}}`:tp==="noBar"?`\\genfrac{}{}{0pt}{}{${a}}{${b}}`:`\\frac{${a}}{${b}}`}
+    case "sSup":return `{${c("e")}}^{${c("sup")}}`;
+    case "sSub":return `{${c("e")}}_{${c("sub")}}`;
+    case "sSubSup":return `{${c("e")}}_{${c("sub")}}^{${c("sup")}}`;
+    case "sPre":return `{}_{${c("sub")}}^{${c("sup")}}{${c("e")}}`;
+    case "rad":{const d=c("deg");const hide=val("radPr","degHide","0");return d&&!["1","on","true"].includes(hide)?`\\sqrt[${d}]{${c("e")}}`:`\\sqrt{${c("e")}}`}
+    case "d":{const b=val("dPr","begChr","("),e=val("dPr","endChr",")"),sep=val("dPr","sepChr","|");
+      const parts=kids(n,"e").map(ommlTex);return `\\left${TEX_DELIM[b]??b}${parts.join(sep==="|"?"\\mid ":texEsc(sep))}\\right${TEX_DELIM[e]??e}`}
+    case "nary":{const ch=val("naryPr","chr","∫");const loc=val("naryPr","limLoc","");const sub=c("sub"),sup=c("sup");
+      const subH=["1","on","true"].includes(val("naryPr","subHide","0")),supH=["1","on","true"].includes(val("naryPr","supHide","0"));
+      const op=(TEX_CHR[ch]||texEsc(ch))+(loc==="undOvr"&&/int/.test(TEX_CHR[ch]||"")?"\\limits":"");
+      return `${op}${!subH&&sub?`_{${sub}}`:""}${!supH&&sup?`^{${sup}}`:""} ${c("e")}`}
+    case "acc":{const ch=val("accPr","chr","\u0302");const e=c("e");const cmd=TEX_ACC[ch];
+      if(cmd==="\\hat"&&(e==="i"||e==="j"))return `\\hat{\\${e}math}`;return cmd?`${cmd}{${e}}`:`\\overset{${texEsc(ch)}}{${e}}`}
+    case "bar":return val("barPr","pos","bot")==="top"?`\\overline{${c("e")}}`:`\\underline{${c("e")}}`;
+    case "groupChr":{const pos=val("groupChrPr","pos","bot");return pos==="top"?`\\overbrace{${c("e")}}`:`\\underbrace{${c("e")}}`}
+    case "m":{const rows=kids(n,"mr").map(r=>kids(r,"e").map(ommlTex).join(" & "));return `\\begin{matrix}${rows.join(" \\\\ ")}\\end{matrix}`}
+    case "eqArr":return `\\begin{gathered}${kids(n,"e").map(ommlTex).join(" \\\\ ")}\\end{gathered}`;
+    case "func":return `${c("fName")} ${c("e")}`;
+    case "limLow":{const e=c("e");return /^\\?(lim|max|min)\s*$/.test(e.trim())||e.trim()==="\\lim"?`\\lim_{${c("lim")}}`:`\\underset{${c("lim")}}{${e}}`}
+    case "limUpp":return `\\overset{${c("lim")}}{${c("e")}}`;
+    case "box":case "borderBox":case "phant":return c("e");
+    case "oMathPara":return kids(n,"oMath").map(ommlTex).join(" \\quad ");
+  }
+  if(/Pr$/.test(name))return "";
+  return [...n.children].map(ommlTex).join("");
+}
 // Word equation (OMML) to readable text
 function omml(n){const name=ln(n),c=k=>{const e=kid(n,k);return e?omml(e):""};
   if(name==="t")return n.textContent;
@@ -918,7 +989,7 @@ async function readDocx(file){
           if(xn==="t"){const t=x.textContent;text+=va==="superscript"?toSup(t):va==="subscript"?toSub(t):t}
           else if(xn==="tab")text+="\t";else if(xn==="br"||xn==="cr")text+="\n";
           else if(xn==="drawing"||xn==="pict"||xn==="object"){for(const b of x.getElementsByTagName("*"))if(ln(b)==="blip"||ln(b)==="imagedata"){const id=attr(b,"embed")||attr(b,"id");const im=id&&await image(id);if(im)imgs.push(im)}}}}
-      else if(nm==="oMath"||nm==="oMathPara")text+=omml(ch);
+      else if(nm==="oMath"||nm==="oMathPara"){const tx=ommlTex(ch).replace(/^(\s|\\ )+|(\s|\\ )+$/g,"");if(tx)text+="$"+tx+"$"}
       else if(nm==="hyperlink"||nm==="smartTag"||nm==="ins"||nm==="sdt"||nm==="sdtContent"||nm==="fldSimple")await walk(ch)}};
     await walk(p);
     const ppr=kid(p,"pPr"),np=ppr&&kid(ppr,"numPr"),sn=styleNum[attr(ppr&&kid(ppr,"pStyle")||null,"val")]||{};let list=null;
@@ -1041,11 +1112,11 @@ function wdRender(){const {qs}=wdData;
     <label class="check"><input type="checkbox" data-i="${i}" class="wdUse" ${q.use?"checked":""}> <b>Q${q.n}</b></label>
     <select data-i="${i}" class="wdType" aria-label="Question type">${TYPE_ORDER.map(k=>`<option value="${k}" ${k===q.type?"selected":""}>${TYPES[k]}</option>`).join("")}</select>
     <select data-i="${i}" class="wdCon" aria-label="Concept for Q${q.n}"><option value="">Concept: same as above</option><option value="\u0000" ${q.concept==="\u0000"?"selected":""}>No concept</option>${cons.map(c=>`<option value="${esc(c)}" ${q.concept===c?"selected":""}>${esc(c)}</option>`).join("")}</select>
-    <div class="wtxt">${q.passage?`<div class="opts">${esc(q.passage).slice(0,160)}…</div>`:""}${esc(q.type==="AR"?"A: "+q.text:q.text).replace(/\n/g,"<br>")}
-      ${q.type==="AR"?`<div class="opts">R: ${esc(q.reason)}</div>`:""}
-      ${isMCQ(q.type)?`<div class="opts">${q.opts.map((o,j)=>"abcd"[j]+") "+(o?esc(o):"<i>missing</i>")).join(" &nbsp; ")}</div>`:""}
+    <div class="wtxt">${q.passage?`<div class="opts">${esc(q.passage).slice(0,160)}…</div>`:""}${mt(q.type==="AR"?"A: "+q.text:q.text).replace(/\n/g,"<br>")}
+      ${q.type==="AR"?`<div class="opts">R: ${mt(q.reason)}</div>`:""}
+      ${isMCQ(q.type)?`<div class="opts">${q.opts.map((o,j)=>"abcd"[j]+") "+(o?mt(o):"<i>missing</i>")).join(" &nbsp; ")}</div>`:""}
       ${q.img?`<img class="qthumb" src="${q.img.src}" alt="Diagram">`:""}
-      <div class="opts">${q.marks?`<span class="chip">${q.marks} mark${q.marks==1?"":"s"}</span> `:""}${q.src&&q.src.length?`<span class="chip srcchip">${esc(srcText(q))}</span> `:""}Answer: <b>${esc(q.ans||"–")}</b>${q.issues.length?` · <span style="color:var(--warn)">${esc(q.issues.join(", "))}</span>`:""}</div></div></div>`).join("")||`<div class="empty">No numbered questions were found. Questions should start with Q1., 1. or Word's own numbering.</div>`;
+      <div class="opts">${q.marks?`<span class="chip">${q.marks} mark${q.marks==1?"":"s"}</span> `:""}${q.src&&q.src.length?`<span class="chip srcchip">${esc(srcText(q))}</span> `:""}Answer: <b>${mt(q.ans||"–")}</b>${q.issues.length?` · <span style="color:var(--warn)">${esc(q.issues.join(", "))}</span>`:""}</div></div></div>`).join("")||`<div class="empty">No numbered questions were found. Questions should start with Q1., 1. or Word's own numbering.</div>`;
   $("wdGo").disabled=!qs.some(q=>q.use);
 }
 $("wdCls").onchange=()=>{wdFill(0);wdRender()};
@@ -1166,9 +1237,9 @@ function pageShell(n,lg){const L=lg?lg.logo:settings.logo,LS=mm(lg?lg.size:(sett
 }
 let mctx;function textW(s){if(!mctx){mctx=document.createElement("canvas").getContext("2d")}mctx.font=curFont().size+'px '+curFont().fam;return mctx.measureText(s).width}
 // option column is ~300px wide; if every option fits in half of it, show two per line
-function optsHTML(list){const one=(o,i)=>`<div class="o"><span class="l">${"abcd"[i]})</span><span>${esc(o)}</span></div>`;
+function optsHTML(list){const one=(o,i)=>`<div class="o"><span class="l">${"abcd"[i]})</span><span>${mt(o)}</span></div>`;
   // half column = ~145px, minus 22px label = ~123px for text; keep a safety margin so nothing wraps
-  const short=list.every(o=>textW(o)<=112);
+  const short=list.every(o=>textW(plain(o))*(hasMath(o)?1.25:1)<=112);
   if(!short)return list.map(one).join("");
   let h="";for(let i=0;i<list.length;i+=2)h+=`<div class="og">${list.slice(i,i+2).map((o,j)=>one(o,i+j)).join("")}</div>`;return h}
 function qHTML(q,n){
@@ -1177,11 +1248,11 @@ function qHTML(q,n){
   const st=settings.srcOn&&srcText(q)?`<div class="srcl">[${esc(srcText(q))}]</div>`:"";
   // no blank answer lines under written questions (removed on request)
   let b="";
-  if(isMCQ(q.type))b=`<div class="s">${mk}${esc(q.text)}</div>`+optsHTML(q.opts)+st;
-  else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${esc(q.text)}</div><div class="s ar"><b>Reason (R):</b> ${esc(q.reason)}</div>`+optsHTML(AR_OPTS)+st;
-  else if(q.type==="TF")b=`<div class="s">${mk}${esc(q.text)} <i>(True / False)</i></div>`+st;
-  else if(q.type!=="CS")b=`<div class="s">${mk}${esc(q.text)}</div>`+st;   // FB, NUM, VSA, SA, LA
-  else if(q.type==="CS")b=`<div class="s">${mk}Read the passage and answer the questions that follow.</div><div class="case">${esc(q.case)}</div>`+q.text.split("\n").filter(Boolean).map(t=>`<div class="s">${esc(t)}</div>`).join("")+st;
+  if(isMCQ(q.type))b=`<div class="s">${mk}${mt(q.text)}</div>`+optsHTML(q.opts)+st;
+  else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${mt(q.text)}</div><div class="s ar"><b>Reason (R):</b> ${mt(q.reason)}</div>`+optsHTML(AR_OPTS)+st;
+  else if(q.type==="TF")b=`<div class="s">${mk}${mt(q.text)} <i>(True / False)</i></div>`+st;
+  else if(q.type!=="CS")b=`<div class="s">${mk}${mt(q.text)}</div>`+st;   // other types
+  else if(q.type==="CS")b=`<div class="s">${mk}Read the passage and answer the questions that follow.</div><div class="case">${mt(q.case)}</div>`+q.text.split("\n").filter(Boolean).map(t=>`<div class="s">${mt(t)}</div>`).join("")+st;
   if(q.img){const im=`<div class="qimg"><img src="${q.img}" alt="" style="width:${effW(q)}%;aspect-ratio:${q.imgAR||1.5}"></div>`;
     const tmp=document.createElement("div");tmp.innerHTML=b;const kids=[...tmp.children];
     const after=q.type==="AR"?kids[1]:q.type==="CS"?kids[1]:kids[0];
@@ -1203,12 +1274,15 @@ function splitQ(q,limit){
   if(i<0)return "fits";
   const b=blocks[i];let cont=null;
   if(b.matches(".s,.o,.case")){
-    const tw=document.createTreeWalker(b,NodeFilter.SHOW_TEXT);let node,cut=null,first=true;
-    outer:while((node=tw.nextNode())){if(node.parentElement.closest(".l,.mk"))continue;const re=/\S+/g;let m;
+    const tw=document.createTreeWalker(b,NodeFilter.SHOW_TEXT);let node,cut=null,first=true;const seenK=new Set();
+    outer:while((node=tw.nextNode())){if(node.parentElement.closest(".l,.mk"))continue;
+      const kx=node.parentElement.closest(".katex");   // an equation moves as one piece
+      if(kx){if(seenK.has(kx))continue;seenK.add(kx);if(kx.getBoundingClientRect().bottom>limit+0.5){if(!first)cut={el:kx};break outer}first=false;continue}
+      const re=/\S+/g;let m;
       while((m=re.exec(node.data))){const r=document.createRange();r.setStart(node,m.index);r.setEnd(node,m.index+m[0].length);
         const rs=r.getClientRects();const bot=rs.length?rs[rs.length-1].bottom:0;
         if(bot>limit+0.5){if(!first)cut={node,off:m.index};break outer}first=false}}
-    if(cut){const r=document.createRange();r.setStart(cut.node,cut.off);r.setEndAfter(b.lastChild);const frag=r.extractContents();
+    if(cut){const r=document.createRange();if(cut.el)r.setStartBefore(cut.el);else r.setStart(cut.node,cut.off);r.setEndAfter(b.lastChild);const frag=r.extractContents();
       cont=b.cloneNode(false);if(b.classList.contains("o")){const l=document.createElement("span");l.className="l";cont.appendChild(l)}
       cont.appendChild(frag);b.classList.add("brk");cont.classList.add("cont")}
   }
@@ -1235,12 +1309,12 @@ function build(){
       for(let i=0;i<obj.length;i+=per){
         const part=obj.slice(i,i+per);while(part.length<per)part.push(null);
         const t=document.createElement("table");t.className="ws-ktab atom";
-        t.innerHTML=`<tr><th>Q.</th>${part.map(x=>`<td>${x?x.n:""}</td>`).join("")}</tr><tr><th>Ans.</th>${part.map(x=>`<td class="ka">${x?esc(keyAns(x.q)):""}</td>`).join("")}</tr>`;
+        t.innerHTML=`<tr><th>Q.</th>${part.map(x=>`<td>${x?x.n:""}</td>`).join("")}</tr><tr><th>Ans.</th>${part.map(x=>`<td class="ka">${x?mt(keyAns(x.q)):""}</td>`).join("")}</tr>`;
         items.push(t);
       }
       for(const x of wr){
         const d=document.createElement("div");d.className="ws-q wans";
-        d.innerHTML=`<span class="n">Q${x.n}.</span><div class="qc">${String(x.q.ans||"–").split("\n").map(l=>`<div class="s">${esc(l)}</div>`).join("")}</div>`;
+        d.innerHTML=`<span class="n">Q${x.n}.</span><div class="qc">${String(x.q.ans||"–").split("\n").map(l=>`<div class="s">${mt(l)}</div>`).join("")}</div>`;
         items.push(d);
       }
     }
@@ -1280,6 +1354,9 @@ function build(){
 // Load the worksheet font before measuring; otherwise lines are measured with a fallback font and columns break in the wrong place
 async function ensureFonts(){const f=curFont(),fam=f.fam.split(",")[0];
   try{await Promise.race([Promise.all(["400","700","italic 400"].map(w=>document.fonts.load(`${w} ${f.size}px ${fam}`,"Ab"))),new Promise(r=>setTimeout(r,4000))])}catch(e){}
+  if([...picked.values()].some(q=>hasMath(q.text)||hasMath(q.case)||hasMath(q.reason)||(q.opts||[]).some(hasMath)||hasMath(q.ans))){
+    try{await Promise.race([Promise.all(["KaTeX_Main","italic KaTeX_Math","KaTeX_Size1","KaTeX_Size2","KaTeX_AMS"].map(f=>document.fonts.load("16px "+f.replace(/^italic /,"")+(f.startsWith("italic")?"":""),"a"))),new Promise(r=>setTimeout(r,4000))])}catch(e){}
+    try{await document.fonts.load("italic 16px KaTeX_Math","x")}catch(e){}}
   try{await document.fonts.ready}catch(e){}}
 try{document.fonts.addEventListener("loadingdone",()=>{if(!$("v-ws").hidden)schedule()})}catch(e){}
 let timer;function schedule(){clearTimeout(timer);timer=setTimeout(renderPreview,250)}
@@ -1591,6 +1668,106 @@ async function sylAction(act, i) {
   }
 }
 
+// ================= Equation editor =================
+// Buttons put LaTeX with □ boxes into the code box; the preview shows the real equation.
+// "Insert" puts $…$ into the box the teacher last tapped in the question form.
+const EQ_TABS = [
+  ["Basic", [["\\frac{a}{b}", "\\frac{□}{□}", "fraction"], ["x^{2}", "□^{2}", "square"], ["x^{3}", "□^{3}", "cube"], ["x^{n}", "□^{□}", "any power"], ["x_{n}", "□_{□}", "subscript"],
+    ["\\sqrt{x}", "\\sqrt{□}"], ["\\sqrt[3]{x}", "\\sqrt[3]{□}"], ["\\sqrt[n]{x}", "\\sqrt[□]{□}"], ["(\;)", "\\left(□\\right)"], ["[\;]", "\\left[□\\right]"], ["|x|", "\\left|□\\right|", "modulus"],
+    ["a{\\times}10^{n}", "□\\times 10^{□}", "× 10ⁿ"], ["\\theta^{\\circ}", "□^{\\circ}", "degree"], ["\\text{ab}", "\\text{□}", "words, units"]]],
+  ["Calculus", [["\\int", "\\int □\\,d□", "integral"], ["\\int_{a}^{b}", "\\int_{□}^{□} □\\,d□", "with limits"], ["\\oint", "\\oint □\\,d□", "closed"], ["\\iint", "\\iint □\\,d□"],
+    ["\\frac{dy}{dx}", "\\frac{d□}{d□}"], ["\\frac{d^{2}y}{dx^{2}}", "\\frac{d^{2}□}{d□^{2}}"], ["\\frac{\\partial y}{\\partial x}", "\\frac{\\partial □}{\\partial □}"], ["\\dot{x}", "\\dot{□}"], ["\\ddot{x}", "\\ddot{□}"],
+    ["\\lim_{x\\to 0}", "\\lim_{□\\to □} □", "limit"], ["\\sum", "\\sum □", "sum"], ["\\sum_{i=1}^{n}", "\\sum_{□=□}^{□} □", "with limits"], ["\\Delta x", "\\Delta □"], ["\\infty", "\\infty "]]],
+  ["Vectors", [["\\vec{A}", "\\vec{□}", "vector"], ["\\hat{\\imath}", "\\hat{\\imath}"], ["\\hat{\\jmath}", "\\hat{\\jmath}"], ["\\hat{k}", "\\hat{k}"], ["\\hat{A}", "\\hat{□}", "unit vector"],
+    ["\\vec{A}\\cdot\\vec{B}", "\\vec{□}\\cdot\\vec{□}", "dot product"], ["\\vec{A}\\times\\vec{B}", "\\vec{□}\\times\\vec{□}", "cross product"], ["|\\vec{A}|", "\\left|\\vec{□}\\right|", "magnitude"], ["\\bar{x}", "\\bar{□}", "average"], ["\\nabla", "\\nabla "]]],
+  ["Log & trig", [["\\log x", "\\log □"], ["\\ln x", "\\ln □"], ["\\log_{a}x", "\\log_{□} □"], ["e^{x}", "e^{□}", "exponential"], ["e^{-x}", "e^{-□}"],
+    ["\\sin", "\\sin □"], ["\\cos", "\\cos □"], ["\\tan", "\\tan □"], ["\\cot", "\\cot □"], ["\\sec", "\\sec □"], ["\\csc", "\\csc □", "cosec"],
+    ["\\sin^{-1}", "\\sin^{-1} □"], ["\\cos^{-1}", "\\cos^{-1} □"], ["\\tan^{-1}", "\\tan^{-1} □"], ["\\sin^{2}", "\\sin^{2} □"]]],
+  ["Matrix", [["\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}", "\\begin{vmatrix} □ & □ \\\\ □ & □ \\end{vmatrix}", "det 2×2"],
+    ["\\begin{vmatrix}a&b&c\\\\d&e&f\\\\g&h&i\\end{vmatrix}", "\\begin{vmatrix} □ & □ & □ \\\\ □ & □ & □ \\\\ □ & □ & □ \\end{vmatrix}", "det 3×3"],
+    ["\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}", "\\begin{bmatrix} □ & □ \\\\ □ & □ \\end{bmatrix}", "matrix 2×2"],
+    ["\\begin{bmatrix}a&b&c\\\\d&e&f\\\\g&h&i\\end{bmatrix}", "\\begin{bmatrix} □ & □ & □ \\\\ □ & □ & □ \\\\ □ & □ & □ \\end{bmatrix}", "matrix 3×3"],
+    ["\\begin{cases}a\\\\b\\end{cases}", "\\begin{cases} □ & □ \\\\ □ & □ \\end{cases}", "cases"]]],
+  ["Greek", "alpha beta gamma delta epsilon eta theta lambda mu nu pi rho sigma tau phi chi psi omega kappa xi zeta Delta Omega Phi Sigma Theta Lambda Gamma Psi".split(" ").map(g => ["\\" + g, "\\" + g + " "])],
+  ["Symbols", "times cdot pm mp approx propto neq leq geq equiv sim rightarrow Rightarrow rightleftharpoons therefore because angle perp parallel hbar infty".split(" ").map(g => ["\\" + g, "\\" + g + " "]).concat([["\\%", "\\%"], ["'", "'"]])]
+];
+let eqTab = 0, eqField = null, eqRange = null;
+const EQ_FIELDS = ["aText", "aReason", "aCase", "aO0", "aO1", "aO2", "aO3", "aAns"];
+let eqLast = "aText";
+EQ_FIELDS.forEach(id => $(id).addEventListener("focus", () => { eqLast = id; }));
+function eqPreview() {
+  const code = $("eqCode").value.trim();
+  if (!code) { $("eqPrev").innerHTML = `<span class="ph">Your equation appears here</span>`; return; }
+  if (!window.katex) { $("eqPrev").textContent = code; return; }
+  try { $("eqPrev").innerHTML = katex.renderToString(code.replace(/□/g, "\\square "), { throwOnError: false, strict: "ignore", displayMode: true }); }
+  catch (e) { $("eqPrev").textContent = code; }
+}
+function eqPalette() {
+  $("eqTabs").innerHTML = EQ_TABS.map(([n], i) => `<button type="button" role="tab" class="eqtab${i === eqTab ? " on" : ""}" data-t="${i}">${esc(n)}</button>`).join("");
+  $("eqPal").innerHTML = EQ_TABS[eqTab][1].map(([lab, , note], i) => `<button type="button" class="eqk" data-k="${i}" aria-label="${esc(note || lab.replace(/\\/g, ""))}"><span>${texHTML(lab)}${note ? `<small>${esc(note)}</small>` : ""}</span></button>`).join("");
+}
+function eqSelectBox(from) {
+  const c = $("eqCode"), v = c.value; let i = v.indexOf("□", from); if (i < 0) i = v.indexOf("□");
+  c.focus(); if (i >= 0) c.setSelectionRange(i, i + 1);
+}
+$("eqTabs").addEventListener("click", e => { const b = e.target.closest("[data-t]"); if (!b) return; eqTab = +b.dataset.t; eqPalette(); });
+// keep the keyboard on the code box while tapping buttons
+$("eqPal").addEventListener("pointerdown", e => { if (e.target.closest(".eqk")) e.preventDefault(); });
+$("eqPal").addEventListener("click", e => {
+  const b = e.target.closest("[data-k]"); if (!b) return;
+  const snip = EQ_TABS[eqTab][1][+b.dataset.k][1], c = $("eqCode"), s = c.selectionStart ?? c.value.length, en = c.selectionEnd ?? s;
+  c.value = c.value.slice(0, s) + snip + c.value.slice(en); eqPreview();
+  if (snip.includes("□")) eqSelectBox(s); else { c.focus(); c.setSelectionRange(s + snip.length, s + snip.length); }
+});
+$("eqNext").addEventListener("pointerdown", e => e.preventDefault());
+$("eqNext").onclick = () => eqSelectBox(($("eqCode").selectionEnd || 0));
+$("eqClear").onclick = () => { $("eqCode").value = ""; eqPreview(); $("eqCode").focus(); };
+$("eqCode").addEventListener("input", eqPreview);
+$("eqOpen").onclick = () => {
+  eqField = $(eqLast) || $("aText"); eqRange = null;
+  const v = eqField.value, pos = eqField.selectionStart ?? v.length; let code = "";
+  for (const m of v.matchAll(MATH_RE)) if (pos >= m.index && pos <= m.index + m[0].length) { eqRange = [m.index, m.index + m[0].length]; code = m[1]; break; }
+  if (!eqRange) eqRange = [pos, eqField.selectionEnd ?? pos];
+  $("eqTitle").textContent = code ? "Edit equation" : "Equation";
+  $("eqCode").value = code; $("eqMsg").textContent = ""; eqPalette(); eqPreview(); $("eqModal").hidden = false;
+  setTimeout(() => $("eqCode").focus(), 60);
+};
+$("eqX").onclick = $("eqCancel").onclick = () => { $("eqModal").hidden = true; };
+$("eqInsert").onclick = () => {
+  const code = $("eqCode").value.trim().replace(/\$/g, "");
+  if (code.includes("□")) { $("eqMsg").textContent = "Fill every □ box, or delete the ones you don't need."; eqSelectBox(0); return; }
+  const f = eqField || $("aText"), v = f.value, [a, b] = eqRange || [v.length, v.length];
+  const pre = v.slice(0, a), post = v.slice(b);
+  const ins = code ? (pre && !/\s$/.test(pre) ? " " : "") + "$" + code + "$" + (post && !/^[\s.,;:)]/.test(post) ? " " : "") : "";
+  f.value = pre + ins + post; $("eqModal").hidden = true;
+  f.focus(); const p = pre.length + ins.length; try { f.setSelectionRange(p, p); } catch (e) {}
+  f.dispatchEvent(new Event("input", { bubbles: true }));
+};
+// Paste from Word on a computer: Word sends its equations along (OMML), so keep them as equations
+function wordHtmlToText(html) {
+  const eqs = [];
+  html = html.replace(/<!--\[if gte msEquation 12\]>([\s\S]*?)<!\[endif\]-->/gi, (m, x) => { eqs.push(x); return `@@EQ${eqs.length - 1}@@`; })
+    .replace(/<!\[if !msEquation\]>[\s\S]*?<!\[endif\]>/gi, "");
+  if (!eqs.length) return null;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("p,div,br,li,tr").forEach(el => el.insertAdjacentText(el.tagName === "BR" ? "afterend" : "beforeend", "\n"));
+  let text = (doc.body.textContent || "").replace(/ /g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  return text.replace(/@@EQ(\d+)@@/g, (m, i) => {
+    try {
+      const xml = new DOMParser().parseFromString(`<r xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${eqs[+i]}</r>`, "application/xml");
+      const root = xml.documentElement; if (root.getElementsByTagName("parsererror").length) return "";
+      const tx = [...root.children].map(ommlTex).join(" ").replace(/^(\s|\\ )+|(\s|\\ )+$/g, ""); return tx ? "$" + tx + "$" : "";
+    } catch (e) { return ""; }
+  });
+}
+EQ_FIELDS.forEach(id => $(id).addEventListener("paste", e => {
+  const html = e.clipboardData && e.clipboardData.getData("text/html"); if (!html || !/msEquation/i.test(html)) return;
+  const text = wordHtmlToText(html); if (text == null) return;
+  e.preventDefault(); const f = e.target, a = f.selectionStart, b = f.selectionEnd;
+  f.value = f.value.slice(0, a) + text + f.value.slice(b); const p = a + text.length; f.setSelectionRange(p, p);
+  toast("Pasted with equations");
+}));
+
 // ================= Admin: bring old questions to the new types =================
 // 4-mark MCQ -> MCQ JEE/NEET, "Proof" tag -> Proof type, 2-mark Short Answer -> 2 Marker
 const UPGRADES = [
@@ -1713,7 +1890,8 @@ function layoutBlocks(blocks, w, pt, allowSplit) {
   const newPage = () => { pages.push([]); y = 0; };
   const room = () => BODY_H - y;
   const optsTwo = blocks.filter(b => b.k === "opt");
-  const two = optsTwo.length === 4 && optsTwo.every(b => measureIn(b.text, pt) <= (w - OIND) / 2 - LAB - 0.15);
+  const optMath = optsTwo.some(b => hasMath(b.text));
+  const two = !optMath && optsTwo.length === 4 && optsTwo.every(b => measureIn(b.text, pt) <= (w - OIND) / 2 - LAB - 0.15);
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     if (b.k === "img") {
@@ -1726,6 +1904,16 @@ function layoutBlocks(blocks, w, pt, allowSplit) {
       const lines = wrapLines(b.text, pt, w - IND), hh = lines.length * lineH(pt);
       if (hh > room()) { if (!allowSplit) return null; newPage(); }
       pages[pages.length - 1].push({ k: "src", x: IND, y: y + 0.02, w: w - IND, h: hh, lines }); y += hh + GAP; continue;
+    }
+    if (b.k === "opt" && optMath) {                             // options with equations: one per line, drawn as pictures
+      const html = pmHTML(b.text), hh = Math.max(lineH(pt), mathHeight(html, w - OIND - LAB, pt));
+      if (hh > room()) { if (!allowSplit) return null; newPage(); }
+      pages[pages.length - 1].push({ k: "mopt", x: OIND, y, w: w - OIND, lab: LAB, label: b.label, html, text: b.text, h: hh }); y += hh + GAP * 0.6; continue;
+    }
+    if (b.k === "text" && hasMath(b.text)) {                    // text with an equation: one picture, kept together
+      const tw = w - IND - (b.passage ? 0.16 : 0), html = pmHTML(b.text, b.pre), hh = mathHeight(html, tw, pt);
+      if (hh > room() && (!allowSplit || y > 0)) { if (!allowSplit) return null; newPage(); }
+      pages[pages.length - 1].push({ k: "mtext", x: IND, y, w: w - IND, h: hh, html, text: b.text, pre: b.pre || "", label: b.label || null, passage: !!b.passage, last: true }); y += hh + GAP; continue;
     }
     if (b.k === "opt") {
       if (two) {
@@ -1759,6 +1947,27 @@ function layoutBlocks(blocks, w, pt, allowSplit) {
   }
   return pages.filter(p => p.length);
 }
+// Lines with an equation are drawn as a picture on the slide (PowerPoint can't show LaTeX).
+// They are measured with the same font and width, so the layout stays right.
+let pmBox = null; const pmH = new Map();
+function pmEl(html, wIn, pt, color) {
+  if (!pmBox) { pmBox = document.createElement("div"); pmBox.style.cssText = "position:absolute;left:-20000px;top:0;font-family:Carlito,Calibri,Arial,sans-serif;line-height:1.32;text-align:justify;pointer-events:none"; document.body.appendChild(pmBox); }
+  pmBox.style.width = (wIn * 96) + "px"; pmBox.style.fontSize = (pt * 96 / 72) + "px"; pmBox.style.color = color || "#FFFFFF"; pmBox.innerHTML = html;
+  return pmBox;
+}
+function mathHeight(html, wIn, pt) {
+  const k = wIn.toFixed(3) + "|" + pt + "|" + html;
+  if (!pmH.has(k)) pmH.set(k, pmEl(html, wIn, pt).offsetHeight / 96);
+  return pmH.get(k);
+}
+async function mathPng(html, wIn, pt, color) {
+  try {
+    const el = pmEl(html, wIn, pt, color);
+    const c = await html2canvas(el, { backgroundColor: null, scale: 3, logging: false });
+    return c.toDataURL("image/png");
+  } catch (e) { return null; }          // caller falls back to plain text
+}
+const pmHTML = (text, pre) => (pre ? `<b style="color:#F4AE22">${esc(pre)}</b>` : "") + mt(text).replace(/\n/g, "<br>");
 // Gold ring around "Q12": diameter grows a little with the font size
 const ringD = pt => Math.max(0.5, lineH(pt) * 1.18);
 function fitQuestion(blocks) {
@@ -1790,7 +1999,7 @@ function pptChrome(pptx, slide, title, right, logo) {
 }
 const clsText = () => String(settings.cls || "").replace(/\s*_\s*/g, " · ");
 async function makePpt(opts) {
-  await loadPickedImages();
+  await loadPickedImages(); await ensureFonts();
   const qs0 = [...picked.values()];
   if (!qs0.length) { toast("Tick at least one question first"); return null; }
   if (!window.PptxGenJS) { toast("PowerPoint tools did not load. Check your internet and reload."); return null; }
@@ -1814,13 +2023,21 @@ async function makePpt(opts) {
     const png = img ? await toPng(img) : null;
     const { pages, pt, w } = fitQuestion(pptBlocks(q, n, png));
     const x0 = PPT.W - RIGHT_PAD - w;
-    pages.forEach((items, pi) => {
+    for (let pi = 0; pi < pages.length; pi++) {
+      const items = pages[pi];
       const s = pptx.addSlide();
       pptChrome(pptx, s, q.concept || q.chapter, `${settings.group ? "Sec " + secLetter(secOf(q), qs) + " · " : ""}Q ${n}${pi ? " (cont.)" : ""} / ${N}`, logo);
       for (const it of items) {
         const x = x0 + it.x, y = BODY_TOP + it.y;
         if (it.k === "img") { s.addImage({ data: it.data, x, y, w: it.w, h: it.h }); continue; }
         if (it.k === "src") { s.addText(it.lines.join(" "), { x, y, w: it.w, h: it.h, fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, align: "right", valign: "top", margin: 0 }); continue; }
+        if (it.k === "mopt") {
+          s.addText(it.label, { x, y, w: it.lab, h: lineH(pt), fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, valign: "top", margin: 0 });
+          const pic = await mathPng(it.html, it.w - it.lab, pt, "#FFFFFF");
+          if (pic) s.addImage({ data: pic, x: x + it.lab, y, w: it.w - it.lab, h: it.h });
+          else s.addText(plain(it.text), { x: x + it.lab, y, w: it.w - it.lab, h: it.h, fontFace: "Calibri", fontSize: pt, color: PPT.WHITE, valign: "top", margin: 0 });
+          continue;
+        }
         if (it.k === "opt") {
           s.addText(it.label, { x, y, w: it.lab, h: it.lines.length * lineH(pt), fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, valign: "top", margin: 0 });
           s.addText(it.lines.join(" "), { x: x + it.lab, y, w: it.w - it.lab, h: it.lines.length * lineH(pt), fontFace: "Calibri", fontSize: pt, color: PPT.WHITE, align: "justify", valign: "top", margin: 0, lineSpacingMultiple: 1.1 });
@@ -1831,6 +2048,14 @@ async function makePpt(opts) {
           s.addShape("ellipse", { x: x0, y: ry, w: d, h: d, fill: { type: "none" }, line: { color: PPT.GOLD, width: 2.25 } });
           s.addText(it.label, { x: x0 - 0.05, y: ry, w: d + 0.1, h: d, fontFace: "Calibri", fontSize: Math.round(pt * (it.label.length > 3 ? 0.56 : 0.66)), bold: true, color: PPT.GOLD, align: "center", valign: "middle", margin: 0 });
         }
+        if (it.k === "mtext") {
+          const tw = it.passage ? it.w - 0.16 : it.w;
+          if (it.passage) s.addShape("rect", { x, y, w: 0.05, h: it.h, fill: { color: PPT.GOLD }, line: { color: PPT.GOLD } });
+          const pic = await mathPng(it.html, tw, pt, it.passage ? "#DCEFE2" : "#FFFFFF");
+          if (pic) s.addImage({ data: pic, x: it.passage ? x + 0.16 : x, y, w: tw, h: it.h });
+          else s.addText(plain((it.pre || "") + it.text), { x: it.passage ? x + 0.16 : x, y, w: tw, h: it.h, fontFace: "Calibri", fontSize: pt, color: it.passage ? PPT.PASSAGE : PPT.WHITE, align: "justify", valign: "top", margin: 0 });
+          continue;
+        }
         let body = it.lines.join(" "); const runs = [];
         if (it.pre && body.startsWith(it.pre)) { runs.push({ text: it.pre, options: { bold: true, color: PPT.GOLD } }); body = body.slice(it.pre.length); }
         runs.push({ text: body, options: {} });
@@ -1839,13 +2064,13 @@ async function makePpt(opts) {
         if (!it.last && pages.length > 1 && it === items[items.length - 1]) s.addText("Continued on next slide →", { x, y: BODY_BOTTOM - 0.3, w: it.w, h: 0.3, fontFace: "Calibri", fontSize: 13, bold: true, color: PPT.GOLD, margin: 0 });
       }
       if (pi < pages.length - 1 && !items.some(it => it.k === "text" && !it.last)) s.addText("Continued on next slide →", { x: x0, y: BODY_BOTTOM - 0.3, w, h: 0.3, fontFace: "Calibri", fontSize: 13, bold: true, color: PPT.GOLD, margin: 0 });
-    });
+    }
   }
   if (opts.key) {
     const all = qs.map((q, i) => ({ n: i + 1, q })).filter(x => !isProof(x.q));   // proving questions have no key entry
     const keyed = all.filter(x => KEY_TABLE.has(x.q.type)), written = all.filter(x => !KEY_TABLE.has(x.q.type));
     if (keyed.length) {
-      const mx = Math.max(0, ...keyed.map(x => keyAns(x.q).length)), per = mx <= 2 ? 10 : mx <= 6 ? 8 : mx <= 10 ? 6 : 4, rowsPerSlide = 8;            // 4 Q/Ans pairs per slide
+      const mx = Math.max(0, ...keyed.map(x => plain(keyAns(x.q)).length)), per = mx <= 2 ? 10 : mx <= 6 ? 8 : mx <= 10 ? 6 : 4, rowsPerSlide = 8;            // 4 Q/Ans pairs per slide
       const groups = []; for (let i = 0; i < keyed.length; i += per) groups.push(keyed.slice(i, i + per));
       for (let g = 0; g < groups.length; g += rowsPerSlide / 2) {
         const s = pptx.addSlide(); pptChrome(pptx, s, "Answer Key", `${keyed.length} answers`, logo);
@@ -1854,7 +2079,7 @@ async function makePpt(opts) {
         for (const grp of groups.slice(g, g + rowsPerSlide / 2)) {
           const pad = Array.from({ length: per }, (_, k) => grp[k] || null);
           rows.push([{ text: "Q.", options: H }, ...pad.map(x => ({ text: x ? String(x.n) : "" }))]);
-          rows.push([{ text: "Ans.", options: H }, ...pad.map(x => ({ text: x ? keyAns(x.q) : "", options: { bold: true } }))]);
+          rows.push([{ text: "Ans.", options: H }, ...pad.map(x => ({ text: x ? plain(keyAns(x.q)) : "", options: { bold: true } }))]);
         }
         s.addTable(rows, { x: 0.6, y: BODY_TOP + 0.1, w: PPT.W - 1.2, colW: [1.13, ...Array(per).fill((PPT.W - 1.2 - 1.13) / per)], fontFace: "Calibri", fontSize: per > 6 ? 20 : 18, color: PPT.WHITE, align: "center", valign: "middle", rowH: 0.5, border: { type: "solid", pt: 1, color: "8FB59B" } });
       }
@@ -1862,7 +2087,7 @@ async function makePpt(opts) {
     if (written.length) {
       // written answers: "Q5." in gold, the answer beside it, as many as fit on each slide
       const pt = 20, LW = 0.9, TW = PPT.W - 1.2 - LW, lh = lineH(pt);
-      const blocks = written.map(x => ({ n: x.n, lines: wrapLines(String(x.q.ans || "–"), pt, TW) }));
+      const blocks = written.map(x => ({ n: x.n, lines: wrapLines(plain(x.q.ans || "–"), pt, TW) }));
       let s = null, y = 0;
       const page = () => { s = pptx.addSlide(); pptChrome(pptx, s, "Answers", `${written.length} written`, logo); y = BODY_TOP; };
       for (const b of blocks) {

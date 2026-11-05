@@ -10,7 +10,9 @@
 <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d4f8c'/%3E%3Cpath d='M18 18h28M18 30h28M18 42h18' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="app.css?v=2.7">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<link rel="stylesheet" href="app.css?v=2.8">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js" defer></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -355,6 +357,17 @@
 <div class="modal" id="imgModal" hidden role="dialog" aria-modal="true" aria-label="Diagram">
   <div class="mbox imgview"><div class="mhead"><h2>Diagram</h2><button class="btn" id="imgX" aria-label="Close">✕</button></div><img id="imgBig" alt="Diagram"></div>
 </div>
+<div class="modal" id="eqModal" hidden role="dialog" aria-modal="true" aria-labelledby="eqTitle">
+  <div class="mbox wide eqbox">
+    <div class="mhead"><h2 id="eqTitle">Equation</h2><button class="btn" id="eqX" aria-label="Close">✕</button></div>
+    <div class="eqprev" id="eqPrev" aria-live="polite"></div>
+    <div class="eqtabs" id="eqTabs" role="tablist"></div>
+    <div class="eqpal" id="eqPal"></div>
+    <label class="f">Type numbers and letters into the □ boxes<textarea id="eqCode" rows="2" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea></label>
+    <div class="bar" style="margin:0;flex-wrap:wrap"><button class="btn" type="button" id="eqNext">Next □ ▸</button><button class="btn" type="button" id="eqClear">Clear</button><span class="grow"></span><button class="btn" type="button" id="eqCancel">Cancel</button><button class="btn primary" type="button" id="eqInsert">Insert</button></div>
+    <p class="note" id="eqMsg" role="status"></p>
+  </div>
+</div>
 <div class="modal" id="dlgModal" hidden role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
   <div class="mbox">
     <div class="mhead"><h2 id="dlgTitle"></h2><button class="btn" id="dlgX" aria-label="Close">✕</button></div>
@@ -378,6 +391,7 @@
       </div>
       <label class="f" id="aCaseL" hidden>Case passage<textarea id="aCase"></textarea></label>
       <label class="f"><span id="aTextLabel">Question</span><textarea id="aText"></textarea></label>
+      <div class="eqbar"><button class="btn eqbtn" type="button" id="eqOpen"><b>∑</b> Equation</button><span class="note" id="eqHint">Goes into the box you last tapped (question, options, answer…). Tap an equation's code in a box first to edit it.</span></div>
       <div class="f">Diagram / image (optional)
         <div class="bar" style="margin:4px 0 0;align-items:center">
           <span class="btn filebtn" id="aImgBtn">Add image<input type="file" id="aImgIn" accept="image/*" aria-label="Choose image for question"></span>
@@ -483,6 +497,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
-<script type="module" src="app.js?v=2.7"></script>
+<script type="module" src="app.js?v=2.8"></script>
 </body>
 </html>
