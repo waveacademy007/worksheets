@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=2.8";
+import { createApi, DEMO } from "./api.js?v=2.9";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.8";
-import { SAMPLE } from "./sample-questions.js?v=2.8";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.8";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.9";
+import { SAMPLE } from "./sample-questions.js?v=2.9";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.9";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "2.8";
+const APP_VERSION = "2.9";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -25,7 +25,11 @@ function texHTML(tex) {
 // text with maths -> HTML (newlines are left to the caller)
 function mt(s) {
   s = String(s ?? ""); let out = "", last = 0;
-  for (const m of s.matchAll(MATH_RE)) { out += esc(s.slice(last, m.index)) + texHTML(m[1]); last = m.index + m[0].length; }
+  for (const m of s.matchAll(MATH_RE)) {
+    out += esc(s.slice(last, m.index)); last = m.index + m[0].length;
+    const punct = (s.slice(last).match(/^[.,;:!?)\]]+/) || [""])[0]; last += punct.length;   // keep "." or "," on the same line as the equation
+    out += punct ? `<span class="mx">${texHTML(m[1])}${esc(punct)}</span>` : texHTML(m[1]);
+  }
   return out + esc(s.slice(last));
 }
 // rough one-line version of the maths, for places that need plain text
@@ -1227,7 +1231,7 @@ $("sLogoClear").onclick=()=>{settings.logo="";saveSet();logoUI();schedule();toas
 
 // ================= Worksheet layout =================
 function pageShell(n,lg){const L=lg?lg.logo:settings.logo,LS=mm(lg?lg.size:(settings.logoSize||25));
-  const p=document.createElement("div");p.className="ws-page";p.style.fontFamily=curFont().fam;p.style.setProperty("--qs",curFont().size+"px");
+  const p=document.createElement("div");p.className="ws-page"+(settings.marks?" mkon":"");p.style.fontFamily=curFont().fam;p.style.setProperty("--qs",curFont().size+"px");
   p.innerHTML=`<div class="ws-head"><div><h3>${esc(settings.academy)}</h3><div class="meta">${esc(settings.cls)}<br>Topic: ${esc(settings.topic)}</div></div>
   ${L?`<div class="ws-logo" style="width:${LS}px;height:${LS}px"><img src="${L}" alt=""></div>`:""}</div>
   ${settings.wmOn&&settings.wm?`<div class="ws-wm">${esc(settings.wm)}</div>`:""}
