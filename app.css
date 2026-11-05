@@ -519,3 +519,14 @@ input[type=range]{width:100%;accent-color:var(--accent);padding:0;border:0;backg
 #eqModal,#dlgModal,#imgModal{z-index:60}
 
 .mx{white-space:nowrap}
+
+/* ---- v3.0: test paper ---- */
+.tpbox{display:grid;gap:10px;margin-top:10px;padding-top:12px;border-top:1px solid var(--line)}
+.tp-strip{display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding:5px 2px;border-bottom:1.5px solid #111;margin-top:-6px}
+.tp-stu{display:flex;gap:28px;font-size:14px;padding:9px 2px 4px}
+.tp-stu span{flex:1;display:flex;align-items:flex-end;white-space:nowrap}
+.tp-stu .dt{flex:.45}
+.tp-stu i{flex:1;border-bottom:1px solid #333;margin-left:6px;height:14px}
+.tp-ins{border:1px solid #333;border-radius:4px;padding:6px 10px;margin:8px 0 4px;font-size:12.5px;line-height:1.45}
+.tp-ins b{display:block;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+.tp-ins ol{margin:0;padding-left:18px}

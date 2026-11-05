@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=2.9";
+import { createApi, DEMO } from "./api.js?v=3.0";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=2.9";
-import { SAMPLE } from "./sample-questions.js?v=2.9";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=2.9";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.0";
+import { SAMPLE } from "./sample-questions.js?v=3.0";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.0";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "2.9";
+const APP_VERSION = "3.0";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -59,7 +59,11 @@ const FONTS = {
   source: { fam: '"Source Serif 4", "Bookman Old Style", Georgia, serif', size: 13.4 }
 };
 const DEFAULTS = { academy: "", teacher: "", phone: "", wm: "", logo: "", logoSize: 25, cls: "", topic: "",
-  group: false, marks: false, key: true, wmOn: true, srcOn: false, font: "garamond", imgSizes: {} };
+  group: false, marks: false, key: true, wmOn: true, srcOn: false, font: "garamond", imgSizes: {},
+  tp: false, tpTime: "", tpMM: "", tpIns: "" };
+// Test paper: default instructions (teacher can change them; empty = no box)
+const TP_INS = "All questions are compulsory.\nMarks for each question are shown against it.\nUse of calculator is not allowed.";
+DEFAULTS.tpIns = TP_INS;
 
 let api, user = null, profile = null;
 let settings = { ...DEFAULTS };          // branding + worksheet options, saved to the teacher's account
@@ -298,7 +302,7 @@ function saveSet() {
   }, 900);
   paintAvatars(); $("drPhone").textContent = settings.phone || "";
 }
-const bind = [["sAcademy", "academy"], ["sTeacher", "teacher"], ["sPhone", "phone"], ["sWm", "wm"], ["wClass", "cls"], ["wTopic", "topic"]];
+const bind = [["sAcademy", "academy"], ["sTeacher", "teacher"], ["sPhone", "phone"], ["sWm", "wm"], ["wClass", "cls"], ["wTopic", "topic"], ["wTpTime", "tpTime"], ["wTpMM", "tpMM"], ["wTpIns", "tpIns"]];
 const checks = [["wGroup", "group"], ["wMarks", "marks"], ["wKey", "key"], ["wWm", "wmOn"], ["wSrc", "srcOn"]];
 bind.forEach(([id, k]) => $(id).addEventListener("input", () => { settings[k] = $(id).value; saveSet(); schedule(); }));
 checks.forEach(([id, k]) => $(id).addEventListener("change", () => { settings[k] = $(id).checked; saveSet(); schedule(); }));
@@ -307,7 +311,23 @@ function fillSettingsUI() {
   bind.forEach(([id, k]) => { $(id).value = settings[k] || ""; });
   checks.forEach(([id, k]) => { $(id).checked = !!settings[k]; });
   $("wFont").value = settings.font;
+  $("wTp").checked = !!settings.tp; $("tpBox").hidden = !settings.tp;
 }
+// ---- Test paper: Time (5 min per question) and M.M. (marks added up), unless the teacher typed them
+function tpAuto() {
+  const qs = [...picked.values()], mins = qs.length * 5, h = Math.floor(mins / 60), m = mins % 60;
+  const time = !mins ? "" : (h ? `${h} Hour${h > 1 ? "s" : ""}` : "") + (h && m ? " " : "") + (m ? `${m} Minutes` : "");
+  const mm = qs.reduce((a, q) => a + (+q.marks || DEF_MARKS[q.type] || 1), 0);
+  return { time, mm: String(+mm.toFixed(2)) };
+}
+const tpVals = () => { const a = tpAuto(); return { time: (settings.tpTime || "").trim() || a.time, mm: (settings.tpMM || "").trim() || a.mm }; };
+function tpPlaceholders() { const a = tpAuto(); $("wTpTime").placeholder = a.time ? `Auto: ${a.time}` : "Auto"; $("wTpMM").placeholder = a.mm ? `Auto: ${a.mm}` : "Auto"; }
+$("wTp").addEventListener("change", () => {
+  settings.tp = $("wTp").checked; $("tpBox").hidden = !settings.tp;
+  if (settings.tp) { settings.marks = true; settings.key = false; $("wMarks").checked = true; $("wKey").checked = false; toast("Test paper: marks shown, answer key off"); }
+  saveSet(); schedule();
+});
+$("tpInsDef").onclick = () => { settings.tpIns = TP_INS; $("wTpIns").value = TP_INS; saveSet(); schedule(); };
 
 // ================= Navigation =================
 const VIEWS = ["home", "chapters", "bank", "ws", "saved", "drafts", "set", "refer", "feedback", "help", "admin", "syl"];
@@ -565,7 +585,7 @@ async function loadPickedImages() {
 // ================= My Worksheets & Drafts =================
 let currentDraft = null;           // {id, name} while editing a draft
 let lastSavedSig = "";
-const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "srcOn", "font", "imgSizes"];
+const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "srcOn", "font", "imgSizes", "tp", "tpTime", "tpMM", "tpIns"];
 // Diagram size: the teacher's choice for this worksheet, else the admin's default
 const effW = q => ((settings.imgSizes || {})[q.id]) || q.imgW || 70;
 function snapshot(kind, name) {
@@ -596,7 +616,7 @@ $("wsClear").onclick = () => {
   const b = $("wsClear");
   if (picked.size && b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Tap again to clear"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Start new"; }, 4000); return; }
   b.dataset.armed = ""; b.textContent = "Start new";
-  picked.clear(); savePicked(); currentDraft = null; store.set("ws_draft_" + user.uid, null); settings.imgSizes = {};
+  picked.clear(); savePicked(); currentDraft = null; store.set("ws_draft_" + user.uid, null); settings.imgSizes = {}; settings.tpTime = ""; settings.tpMM = ""; $("wTpTime").value = ""; $("wTpMM").value = "";
   settings.topic = ""; settings.cls = ""; $("wTopic").value = ""; $("wClass").value = ""; saveSet();
   updateCounts(true); renderPreview(); $("draftNote").hidden = true; toast("Started a new worksheet");
 };
@@ -1235,10 +1255,16 @@ function pageShell(n,lg){const L=lg?lg.logo:settings.logo,LS=mm(lg?lg.size:(sett
   p.innerHTML=`<div class="ws-head"><div><h3>${esc(settings.academy)}</h3><div class="meta">${esc(settings.cls)}<br>Topic: ${esc(settings.topic)}</div></div>
   ${L?`<div class="ws-logo" style="width:${LS}px;height:${LS}px"><img src="${L}" alt=""></div>`:""}</div>
   ${settings.wmOn&&settings.wm?`<div class="ws-wm">${esc(settings.wm)}</div>`:""}
+  ${settings.tp&&n===1&&!lg?tpHTML():""}
   <div class="ws-body"><div class="ws-col"></div><div class="ws-col"></div></div>
   <div class="ws-foot"><span>By ${esc(settings.teacher)}</span><span>☎ ${esc(settings.phone)}</span><span class="pg">Page ${n}</span></div>`;
   return p;
 }
+// Test paper strip on page 1: Time / M.M., a name line, general instructions
+function tpHTML(){const v=tpVals(),ins=String(settings.tpIns||"").split("\n").map(x=>x.trim()).filter(Boolean);
+  return `<div class="tp-strip"><span>Time: ${esc(v.time)}</span><span>M.M.: ${esc(v.mm)}</span></div>
+  <div class="tp-stu"><span>Name:<i></i></span><span class="dt">Date:<i></i></span></div>
+  ${ins.length?`<div class="tp-ins"><b>General Instructions</b><ol>${ins.map(x=>`<li>${mt(x)}</li>`).join("")}</ol></div>`:""}`}
 let mctx;function textW(s){if(!mctx){mctx=document.createElement("canvas").getContext("2d")}mctx.font=curFont().size+'px '+curFont().fam;return mctx.measureText(s).width}
 // option column is ~300px wide; if every option fits in half of it, show two per line
 function optsHTML(list){const one=(o,i)=>`<div class="o"><span class="l">${"abcd"[i]})</span><span>${mt(o)}</span></div>`;
@@ -1374,7 +1400,7 @@ async function renderPreview(){
     const c=p.cloneNode(true);c.style.transform=`scale(${sc})`;wrap.appendChild(c);S.appendChild(wrap)});
   const n=picked.size;
   $("pageInfo").textContent=`${n} question${n===1?"":"s"} · ${pages.length} page${pages.length>1?"s":""} · A4`;
-  renderImgSizes();
+  renderImgSizes(); tpPlaceholders();
 }
 // Teacher's "Diagram sizes" list (rebuilt only when the set of diagrams changes, so sliding stays smooth)
 let iszSig="";
@@ -2020,6 +2046,7 @@ async function makePpt(opts) {
     s.addText(settings.academy || APP.name, { x: 0.5, y, w: PPT.W - 1, h: 0.8, fontFace: "Calibri", fontSize: 40, bold: true, color: PPT.WHITE, align: "center", margin: 0, fit: "shrink" });
     s.addText(settings.topic || chapters.join(" · "), { x: 0.8, y: y + 0.85, w: PPT.W - 1.6, h: 0.6, fontFace: "Calibri", fontSize: 26, bold: true, color: PPT.GOLD, align: "center", margin: 0, fit: "shrink" });
     s.addText(`${settings.cls ? clsText() + " · " : ""}${N} question${N === 1 ? "" : "s"}`, { x: 0.8, y: y + 1.5, w: PPT.W - 1.6, h: 0.5, fontFace: "Calibri", fontSize: 20, color: "E8E8E8", align: "center", margin: 0 });
+    if (settings.tp) { const v = tpVals(); s.addText(`Time: ${v.time}     ·     M.M.: ${v.mm}`, { x: 0.8, y: y + 2.05, w: PPT.W - 1.6, h: 0.5, fontFace: "Calibri", fontSize: 22, bold: true, color: PPT.GOLD, align: "center", margin: 0 }); }
   }
   for (let i = 0; i < N; i++) {
     const q = qs[i], n = i + 1;
