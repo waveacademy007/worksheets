@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
-<link rel="stylesheet" href="app.css?v=3.5">
+<link rel="stylesheet" href="app.css?v=3.6">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js" defer></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -370,6 +370,14 @@
     <div class="bar" style="margin:0"><span class="grow"></span><button class="btn" id="cropCancel">Cancel</button><button class="btn primary" id="cropSave">Save photo</button></div>
   </div>
 </div>
+<div class="modal" id="dcModal" hidden role="dialog" aria-modal="true" aria-labelledby="dcTitle">
+  <div class="mbox">
+    <div class="mhead"><h2 id="dcTitle">Crop diagram</h2><button class="btn" id="dcX" aria-label="Close">✕</button></div>
+    <p class="note" style="margin:0">Drag the corners to keep only the diagram. Drag inside the box to move it.</p>
+    <div class="dcwrap"><div class="dcstage" id="dcStage"><img id="dcImg" alt="Image to crop" draggable="false"><div class="dcrect" id="dcRect"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div></div></div>
+    <div class="bar" style="margin:0;flex-wrap:wrap"><button class="btn" id="dcAll">Use whole image</button><span class="grow"></span><button class="btn" id="dcCancel">Cancel</button><button class="btn primary" id="dcSave">Crop</button></div>
+  </div>
+</div>
 <div class="modal" id="imgModal" hidden role="dialog" aria-modal="true" aria-label="Diagram">
   <div class="mbox imgview"><div class="mhead"><h2>Diagram</h2><button class="btn" id="imgX" aria-label="Close">✕</button></div><img id="imgBig" alt="Diagram"></div>
 </div>
@@ -419,7 +427,7 @@
       
       <div class="row2">
         <label class="f">Type<select id="aType"></select></label>
-        <label class="f">Exams<input type="text" id="aExam" value="CBSE"></label>
+        <div class="f exf">Exams<div class="exbox" id="aExam" role="group" aria-label="Exams"></div></div>
         <label class="f">Class<select id="aClass"><option>9</option><option selected>10</option><option>11</option><option>12</option></select></label>
         <label class="f">Subject<select id="aSubject"></select></label>
         <label class="f">Chapter<select id="aChapter"></select><input type="text" id="aChapterNew" placeholder="New chapter name" hidden></label>
@@ -432,6 +440,8 @@
       <div class="f">Diagram / image (optional)
         <div class="bar" style="margin:4px 0 0;align-items:center">
           <span class="btn filebtn" id="aImgBtn">Add image<input type="file" id="aImgIn" accept="image/*" aria-label="Choose image for question"></span>
+          <button class="btn" type="button" id="aImgPaste">Paste image</button>
+          <button class="btn" type="button" id="aImgCrop" hidden>Crop</button>
           <img id="aImgPrev" alt="Chosen image" hidden style="max-height:70px;max-width:140px;border:1px solid var(--line);border-radius:6px;background:#fff">
 
           <button class="btn" id="aImgDel" hidden>Remove image</button>
@@ -471,7 +481,7 @@
     <div id="wdReview" hidden style="display:grid;gap:10px">
       <div id="wdSummary" style="font-weight:600"></div>
       <div class="row2">
-        <label class="f">Exams<input type="text" id="wdExam" value="CBSE"></label>
+        <div class="f exf">Exams<div class="exbox" id="wdExam" role="group" aria-label="Exams"></div></div>
         <label class="f">Source (for questions without one)<select id="wdSrc"></select></label>
         <label class="f">Year<input type="text" id="wdYear" inputmode="numeric" maxlength="4" placeholder="e.g. 2023"></label>
         <label class="f">Class<select id="wdCls"><option>9</option><option>10</option><option>11</option><option>12</option></select></label>
@@ -534,6 +544,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
-<script type="module" src="app.js?v=3.5"></script>
+<script type="module" src="app.js?v=3.6"></script>
 </body>
 </html>

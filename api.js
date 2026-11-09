@@ -188,6 +188,20 @@ async function firebaseApi() {
       return total;
     },
     setChapterMap(c) { return F.setDoc(F.doc(db, "meta", "chapters"), { c }); },
+    // Go through every question once and fix its exam list with fn(question) -> new list
+    async fixExams(fn, onProgress) {
+      let last = null, seen = 0, changed = 0;
+      for (let guard = 0; guard < 1000; guard++) {
+        const parts = [F.collection(db, "questions"), F.orderBy(F.documentId())]; if (last) parts.push(F.startAfter(last)); parts.push(F.limit(400));
+        const r = await F.getDocs(F.query(...parts)); if (r.empty) break;
+        const b = F.writeBatch(db); let k = 0;
+        r.docs.forEach(d => { const q = d.data(), ne = fn(q); if (JSON.stringify(ne) !== JSON.stringify(q.exam || null)) { b.update(d.ref, { exam: ne }); k++; } });
+        if (k) await b.commit();
+        changed += k; seen += r.size; last = r.docs[r.docs.length - 1]; onProgress && onProgress(seen, changed);
+        if (r.size < 400) break;
+      }
+      return changed;
+    },
     async syllabus() { const s = await F.getDoc(F.doc(db, "meta", "syllabus")); return s.exists() ? s.data() : null; },
     saveSyllabus(syl) { return F.setDoc(F.doc(db, "meta", "syllabus"), syl); },
     async users() {
@@ -287,6 +301,7 @@ function demoApi() {
       set("questions", qs); return wait(n);
     },
     async setChapterMap(c) { set("chapters", c); },
+    async fixExams(fn) { const qs = get("questions", []); let n = 0; qs.forEach(q => { const ne = fn(q); if (JSON.stringify(ne) !== JSON.stringify(q.exam || null)) { q.exam = ne; n++; } }); set("questions", qs); return wait(n); },
     async syllabus() { return wait(get("syllabus", null)); },
     async saveSyllabus(s) { set("syllabus", s); },
     async users() { return wait(Object.entries(get("users", {})).map(([uid, x]) => ({ uid, email: x.email, name: x.name, createdAt: x.createdAt, planUntil: x.planUntil, admin: !!x.admin, referredBy: x.referredBy || null, referralRewarded: !!x.referralRewarded })).sort((a, b) => b.createdAt - a.createdAt)); },
@@ -375,6 +390,11 @@ function localApi() {
       return hit.length;
     },
     async setChapterMap() {},
+    async fixExams(fn) {
+      const hit = []; for (const q of await all()) { const ne = fn(q); if (JSON.stringify(ne) !== JSON.stringify(q.exam || null)) { q.exam = ne; hit.push(q); } }
+      if (hit.length) { await tx("questions", "readwrite", s => { hit.forEach(q => s.put(q)); }); await touch(); }
+      return hit.length;
+    },
     syllabus() { return kvGet("syllabus"); },
     saveSyllabus(s) { return kvSet("syllabus", s); },
     async listWorksheets(kind) { const all = (await kvGet("worksheets")) || {}; return Object.entries(all).map(([id, w]) => ({ id, ...w })).filter(w => w.kind === kind).sort((a, b) => b.updatedAt - a.updatedAt); },

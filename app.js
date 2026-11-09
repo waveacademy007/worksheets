@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=3.5";
+import { createApi, DEMO } from "./api.js?v=3.6";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.5";
-import { SAMPLE } from "./sample-questions.js?v=3.5";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.5";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.6";
+import { SAMPLE } from "./sample-questions.js?v=3.6";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.6";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "3.5";
+const APP_VERSION = "3.6";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -184,6 +184,7 @@ async function startApp() {
   $("drRole").textContent = profile.admin ? "Admin" : "Teacher";
   $("drPhone").textContent = settings.phone || "";
   $("drAdmin").hidden = !profile.admin;
+  if (profile.admin) setTimeout(fixExamsOnce, 1500);
   const ph = APP.contactPhone.replace(/\D/g, "").slice(-10);
   $("drCall").href = `tel:+91${ph}`;
   $("drWa").href = `https://wa.me/91${ph}?text=${encodeURIComponent("Hello, I need help with " + APP.name)}`;
@@ -380,7 +381,7 @@ const SUBJECT_ICONS = {
   _: { bg: "#eef2f6", svg: '<path d="M10 10h12a4 4 0 0 1 4 4v24a3 3 0 0 0-3-3H10zM38 10H26a4 4 0 0 0-4 4v24a3 3 0 0 1 3-3h13z" fill="#fff" stroke="#0e2a47" stroke-width="2.2" stroke-linejoin="round"/>' }
 };
 function initHome() {
-  fillSel($("fExam"), [["", "All exams"], ["CBSE", "CBSE"], ["JEE", "JEE"], ["NEET", "NEET"]]);
+  fillSel($("fExam"), [["", "All exams"], ["CBSE", "CBSE"], ["JEE", "JEE"], ["NEET", "NEET"], ["OLYMPIAD", "OLYMPIAD"]]);
   fillSel($("fClass"), CLASSES.map(c => [String(c), "Class " + roman(c)]));
   fillSel($("fType"), TYPE_ORDER.map(k => [k, TYPES[k]]), "All types");
   fillSel($("fMarks"), [1, 2, 3, 4, 5].map(m => [String(m), m + (m === 1 ? " mark" : " marks")]), "All marks");
@@ -556,12 +557,43 @@ function updateCounts(animate) {
 $("selAll").onclick = () => { shown().forEach(pick); savePicked(); renderList(); updateCounts(true); };
 $("selNone").onclick = () => { shown().forEach(q => picked.delete(q.id)); savePicked(); renderList(); updateCounts(true); };
 
-// A JEE / NEET source also tags the question with that exam, so the Exam filter finds it
-function examsFromSrc(q) {
-  const ex = new Set(q.exam && q.exam.length ? q.exam : ["CBSE"]);
-  for (const x of q.src || []) { if (/^JEE/.test(x.s)) ex.add("JEE"); if (x.s === "NEET") ex.add("NEET"); }
-  return [...ex];
+// Only four exams: CBSE, JEE, NEET, OLYMPIAD. Old or typed names are mapped to these.
+const EXAMS = ["CBSE", "JEE", "NEET", "OLYMPIAD"];
+function examOf(w) {
+  w = String(w || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!w) return "";
+  if (/^(CBSE|BOARD|NCERT|SAMPLE|PYQ|EXEMPLAR|STATE)/.test(w)) return "CBSE";
+  if (/^(JEE|IIT|AIEEE|MAIN|ADV|BITSAT)/.test(w)) return "JEE";
+  if (/^(NEET|AIPMT|AIIMS|JIPMER)/.test(w)) return "NEET";
+  if (/(OLYMP|^NSO|^IMO|^NSE|^IJSO|^KVPY|^NTSE|^INPHO|^IPHO|^INCHO|^INBO|^IOQ|^PRMO|^RMO|^INMO|^IEO|^NSTSE)/.test(w)) return "OLYMPIAD";
+  return "";
 }
+// exam list (array or text) + sources -> clean list in fixed order; never empty
+function normExam(exam, src) {
+  const raw = Array.isArray(exam) ? exam : String(exam || "").split(/[,\/;|]+/);
+  const set = new Set();
+  for (const r of raw) { const whole = examOf(r); if (whole) set.add(whole); else String(r || "").split(/\s+/).forEach(w => { const e = examOf(w); if (e) set.add(e); }); }
+  for (const x of src || []) { const e = examOf(x.s); if (e && e !== "CBSE") set.add(e); }
+  const out = EXAMS.filter(e => set.has(e)); return out.length ? out : ["CBSE"];
+}
+const examsFromSrc = q => normExam(q.exam, q.src);
+// One time, when the admin opens the app: put every old question on the four exams
+async function fixExamsOnce() {
+  let flags = {};
+  try { flags = (await api.getPrivate("flags")) || {}; } catch (e) { if (store.get("exam4_done", false)) return; }
+  if (flags.exam4) return;
+  try {
+    const n = await api.fixExams(q => normExam(q.exam, q.src), (seen) => toast(`Updating exams of old questions… ${seen} checked`, 60000));
+    try { await api.setPrivate("flags", { ...flags, exam4: Date.now() }); } catch (e) {} store.set("exam4_done", true);
+    if (n) { toast(`${n} old question${n === 1 ? "" : "s"} now use CBSE / JEE / NEET / OLYMPIAD`); current = current.map(q => ({ ...q, exam: normExam(q.exam, q.src) })); if (nav.chapter) renderList(); }
+    else $("toast").hidden = true;
+  } catch (e) { toast("Could not update old exams now. It will try again next time."); }
+}
+// the four tick-boxes used in Add question and Word import
+function exBox(id) { $(id).innerHTML = EXAMS.map(e => `<label class="exck"><input type="checkbox" value="${e}"><span>${e}</span></label>`).join(""); }
+const getEx = id => { const v = [...$(id).querySelectorAll("input:checked")].map(i => i.value); return v.length ? v : ["CBSE"]; };
+function setEx(id, list) { const s = new Set(normExam(list)); $(id).querySelectorAll("input").forEach(i => { i.checked = s.has(i.value); }); }
+exBox("aExam"); exBox("wdExam"); setEx("aExam", ["CBSE"]); setEx("wdExam", ["CBSE"]);
 // Save questions to the online bank, then refresh chapters
 async function saveToBank(list) {
   const base = Date.now() * 1000;
@@ -735,7 +767,7 @@ let editing=null;   // the question being edited, or null when adding a new one
 const ADD_FIELDS=["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns","aChapterNew","aConceptNew"];
 function clearAddForm(){ADD_FIELDS.forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;$("aImgW").value="70";aImgUI();$("aErr").textContent="";$("aImgMsg").textContent=""}
 function addMode(isEdit){$("addTitle").textContent=isEdit?"Edit question":"Add a question";$("addSave").textContent=isEdit?"Save changes":"Save question"}
-$("addOpen").onclick=()=>{if(editing){editing=null;clearAddForm();$("aExam").value="CBSE"}addMode(false);$("addModal").hidden=false;
+$("addOpen").onclick=()=>{if(editing){editing=null;clearAddForm();setEx("aExam",["CBSE"])}addMode(false);$("addModal").hidden=false;
   const k=addKeep&&(!nav.chapter||(addKeep.cls===nav.cls&&addKeep.subject===nav.subject&&addKeep.chapter===nav.chapter))?addKeep:{cls:nav.cls||10,subject:nav.subject,chapter:nav.chapter,concept:fConcept&&fConcept!=="\u0000"?fConcept:""};
   $("aClass").value=String(k.cls||10);addFill(0,k);$("aErr").textContent="";addTypeUI();$("aText").focus()};
 $("addCancel").onclick=$("addX").onclick=()=>{$("addModal").hidden=true};
@@ -747,22 +779,56 @@ function srcRow(s="",y=""){const d=document.createElement("div");d.className="sr
 $("aSrcAdd").onclick=()=>srcRow();
 function readSrcRows(){return [...$("aSrcRows").children].map(r=>({s:r.querySelector("select").value,y:(r.querySelector("input").value.trim().match(/^(19|20)\d{2}$/)||[""])[0]}))}
 let aImg=null;
-function aImgUI(){const on=!!aImg;$("aImgPrev").hidden=!on;$("aImgSize").hidden=!on;$("aImgDel").hidden=!on;if(on){$("aImgPrev").src=aImg.src;$("aImgWPrev").src=aImg.src}aImgWUI();$("aImgBtn").firstChild.nodeValue=on?"Change image":"Add image"}
+function aImgUI(){const on=!!aImg;$("aImgPrev").hidden=!on;$("aImgCrop").hidden=!on;$("aImgSize").hidden=!on;$("aImgDel").hidden=!on;if(on){$("aImgPrev").src=aImg.src;$("aImgWPrev").src=aImg.src}aImgWUI();$("aImgBtn").firstChild.nodeValue=on?"Change image":"Add image"}
 function aImgWUI(){const v=+$("aImgW").value;$("aImgWVal").textContent=v+"%";$("aImgWPrev").style.width=v+"%"}
 $("aImgW").addEventListener("input",aImgWUI);
-$("aImgIn").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];if(!f)return;
-  $("aImgMsg").textContent="Preparing image…";
-  const url=URL.createObjectURL(f);const img=new Image();
-  img.onload=()=>{const k=Math.min(1,900/Math.max(img.naturalWidth,img.naturalHeight));const c=document.createElement("canvas");c.width=Math.round(img.naturalWidth*k);c.height=Math.round(img.naturalHeight*k);
-    const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);
-    aImg={src:c.toDataURL("image/jpeg",0.88),ar:c.width/c.height};URL.revokeObjectURL(url);$("aImgMsg").textContent="";aImgUI();setTimeout(()=>{e.target.value=""},0)};
-  img.onerror=()=>{URL.revokeObjectURL(url);$("aImgMsg").textContent="Could not open that image. Use JPG or PNG."};img.src=url});
+// any picture (file, pasted, existing) -> canvas on white, max 2000 px so cropping stays sharp
+function imgCanvas(src,max=2000){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));const c=document.createElement("canvas");c.width=Math.max(1,Math.round(img.naturalWidth*k));c.height=Math.max(1,Math.round(img.naturalHeight*k));
+  const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);res(c)};img.onerror=()=>rej(new Error("badimage"));img.src=src})}
+// a picture for the question: open the crop screen, then keep the result (max 900 px)
+async function aImgFrom(blob){$("aImgMsg").textContent="Preparing image…";const url=URL.createObjectURL(blob);
+  try{const c=await imgCanvas(url);$("aImgMsg").textContent="";dcOpen(c,out=>{aImg=out;aImgUI()})}
+  catch(e){$("aImgMsg").textContent="Could not open that image. Use JPG or PNG."}finally{URL.revokeObjectURL(url)}}
+$("aImgIn").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];setTimeout(()=>{e.target.value=""},0);if(f)aImgFrom(f)});
+$("aImgPaste").onclick=async()=>{
+  if(!navigator.clipboard||!navigator.clipboard.read){$("aImgMsg").textContent="This browser cannot paste from this button. Press Ctrl + V, or use Add image.";return}
+  try{for(const it of await navigator.clipboard.read()){const t=it.types.find(x=>x.startsWith("image/"));if(t){aImgFrom(await it.getType(t));return}}
+    $("aImgMsg").textContent="No picture is copied. Copy an image or take a screenshot first."}
+  catch(e){$("aImgMsg").textContent="Paste was not allowed. Press Ctrl + V, or use Add image."}};
+$("aImgCrop").onclick=async()=>{if(!aImg)return;try{dcOpen(await imgCanvas(aImg.src),out=>{aImg=out;aImgUI()})}catch(e){$("aImgMsg").textContent="Could not open the image to crop."}};
+// Ctrl+V with a copied picture while the question form is open (text pastes into boxes as usual)
+document.addEventListener("paste",e=>{
+  if($("addModal").hidden||!$("eqModal").hidden||!$("dcModal").hidden||e.defaultPrevented)return;
+  const cd=e.clipboardData;if(!cd)return;const it=[...cd.items].find(i=>i.kind==="file"&&i.type.startsWith("image/"));if(!it)return;
+  const t=e.target,inBox=t&&(t.tagName==="TEXTAREA"||(t.tagName==="INPUT"&&/^(text|search|)$/.test(t.type)));
+  if(inBox&&(cd.getData("text/plain")||"").trim())return;
+  e.preventDefault();const f=it.getAsFile();if(f)aImgFrom(f)});
+// ---- diagram crop: a rectangle with four corner handles (values are 0–1 of the picture)
+const dc={c:null,cb:null,r:{x:0,y:0,w:1,h:1}};
+function dcOpen(canvas,cb){dc.c=canvas;dc.cb=cb;dc.r={x:0,y:0,w:1,h:1};$("dcImg").src=canvas.toDataURL("image/jpeg",0.9);$("dcModal").hidden=false;dcDraw()}
+function dcDraw(){const r=dc.r,s=$("dcRect").style;s.left=r.x*100+"%";s.top=r.y*100+"%";s.width=r.w*100+"%";s.height=r.h*100+"%"}
+function dcDone(r){const c=dc.c,sx=Math.round(r.x*c.width),sy=Math.round(r.y*c.height),sw=Math.max(1,Math.round(r.w*c.width)),sh=Math.max(1,Math.round(r.h*c.height));
+  const k=Math.min(1,900/Math.max(sw,sh)),o=document.createElement("canvas");o.width=Math.max(1,Math.round(sw*k));o.height=Math.max(1,Math.round(sh*k));
+  const x=o.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,o.width,o.height);x.imageSmoothingQuality="high";x.drawImage(c,sx,sy,sw,sh,0,0,o.width,o.height);
+  $("dcModal").hidden=true;const cb=dc.cb;dc.c=dc.cb=null;cb&&cb({src:o.toDataURL("image/jpeg",0.88),ar:o.width/o.height})}
+$("dcSave").onclick=()=>dcDone(dc.r);
+$("dcAll").onclick=()=>dcDone({x:0,y:0,w:1,h:1});
+$("dcX").onclick=$("dcCancel").onclick=()=>{$("dcModal").hidden=true;dc.c=dc.cb=null};
+(()=>{const st=$("dcStage");let drag=null;const MIN=0.04;
+  st.addEventListener("pointerdown",e=>{const h=e.target.dataset&&e.target.dataset.h,inRect=e.target.closest("#dcRect");if(!h&&!inRect)return;
+    e.preventDefault();st.setPointerCapture(e.pointerId);const b=st.getBoundingClientRect();drag={h:h||"move",b,x:e.clientX,y:e.clientY,r:{...dc.r}}});
+  st.addEventListener("pointermove",e=>{if(!drag)return;const dx=(e.clientX-drag.x)/drag.b.width,dy=(e.clientY-drag.y)/drag.b.height,o=drag.r;let x0=o.x,y0=o.y,x1=o.x+o.w,y1=o.y+o.h;
+    if(drag.h==="move"){const nx=Math.max(0,Math.min(1-o.w,o.x+dx)),ny=Math.max(0,Math.min(1-o.h,o.y+dy));dc.r={x:nx,y:ny,w:o.w,h:o.h};dcDraw();return}
+    if(drag.h.includes("w"))x0=Math.max(0,Math.min(x1-MIN,x0+dx));if(drag.h.includes("e"))x1=Math.min(1,Math.max(x0+MIN,x1+dx));
+    if(drag.h.includes("n"))y0=Math.max(0,Math.min(y1-MIN,y0+dy));if(drag.h.includes("s"))y1=Math.min(1,Math.max(y0+MIN,y1+dy));
+    dc.r={x:x0,y:y0,w:x1-x0,h:y1-y0};dcDraw()});
+  const up=()=>{drag=null};st.addEventListener("pointerup",up);st.addEventListener("pointercancel",up)})();
 $("aImgDel").onclick=()=>{aImg=null;aImgUI()};
 // Open the form filled with an existing question
 async function openEdit(q){
   editing=q;clearAddForm();addMode(true);
   $("aType").value=q.type;addTypeUI();
-  $("aExam").value=(q.exam||[]).join(", ");$("aClass").value=String(q.cls);
+  setEx("aExam",q.exam||[]);$("aClass").value=String(q.cls);
   addFill(0,{subject:q.subject,chapter:q.chapter,concept:q.concept||""});
   $("aMarks").value=q.marks??"";$("aText").value=q.text||"";$("aReason").value=q.reason||"";$("aCase").value=q.case||"";$("aAns").value=q.ans||"";
   if(isMCQ(q.type))(q.opts||[]).forEach((o,i)=>{if(i<4)$("aO"+i).value=o});
@@ -784,7 +850,7 @@ $("addSave").onclick=async()=>{
   if($("aConcept").value===NEW&&!concept){$("aErr").textContent="Type the new concept's name, or choose No concept.";return}
   if(isMCQ(t)&&opts.some(o=>!o)){$("aErr").textContent="Fill all four options.";return}
   if(t==="AR"&&!$("aReason").value.trim()){$("aErr").textContent="Write the Reason (R).";return}
-  const q={exam:$("aExam").value.split(/[ ,]+/).map(s=>s.trim().toUpperCase()).filter(Boolean),cls:+$("aClass").value,subject:$("aSubject").value,chapter,type:t,text,ans:t==="TF"?tfAns($("aAns").value.trim()):$("aAns").value.trim(),marks:+$("aMarks").value||1};
+  const q={exam:getEx("aExam"),cls:+$("aClass").value,subject:$("aSubject").value,chapter,type:t,text,ans:t==="TF"?tfAns($("aAns").value.trim()):$("aAns").value.trim(),marks:+$("aMarks").value||1};
   if(!q.exam.length)q.exam=["CBSE"];
   if(isMCQ(t))q.opts=opts; if(t==="AR"){q.opts=AR_OPTS;q.reason=$("aReason").value.trim()} if(t==="CS")q.case=$("aCase").value.trim();
   if(concept)q.concept=concept;
@@ -819,7 +885,7 @@ async function saveEdit(old,q){
   const here=saved.cls===nav.cls&&saved.subject===nav.subject&&saved.chapter===nav.chapter;
   if(i>=0){if(here)current[i]=saved;else current.splice(i,1)}
   if(picked.has(old.id)){picked.set(old.id,saved);savePicked()}
-  editing=null;clearAddForm();addMode(false);$("aExam").value="CBSE";$("addModal").hidden=true;
+  editing=null;clearAddForm();addMode(false);setEx("aExam",["CBSE"]);$("addModal").hidden=true;
   renderList();renderHome();toast(here?"Question updated":`Question updated and moved to ${saved.chapter}`);
 }
 // ===== Import from Excel / CSV / pasted rows =====
@@ -872,7 +938,7 @@ function rowsToQuestions(rows,images){
     if(err.length){probs.push(`Row ${n}: ${err.join("; ")}`);return}
     const chItem=findItem(chapList(cls,subj,true),chapter);if(chItem)chapter=chItem.n;else newCh.add(cls+"|"+subj+"|"+chapter.toLowerCase());
     if(concept){const co=chItem&&findItem(chItem.k,concept);if(co)concept=co.n;else newCon.add(cls+"|"+subj+"|"+chapter.toLowerCase()+"|"+concept.toLowerCase())}
-    const q={id:"i"+Date.now().toString(36)+ix,exam:(v.exam||"CBSE").split(/[ ,\/]+/).map(x=>x.toUpperCase()).filter(Boolean),cls,subject:subj,chapter,type,text:v.text,ans,
+    const q={id:"i"+Date.now().toString(36)+ix,exam:normExam(v.exam||"CBSE"),cls,subject:subj,chapter,type,text:v.text,ans,
       marks:parseFloat(v.marks)||DEF_MARKS[type]};
     if(isMCQ(type))q.opts=[v.o0,v.o1,v.o2,v.o3];if(type==="AR"){q.opts=AR_OPTS;q.reason=v.reason}if(type==="CS")q.case=v.case;
     if(img){q.img=img.src;q.imgAR=img.ar;q.imgW=sizePct(v.imgSize)}
@@ -1166,7 +1232,7 @@ $("wdFile").addEventListener("change",async e=>{const f=e.target.files&&e.target
 $("wdGo").onclick=async()=>{const cls=+$("wdCls").value,subject=$("wdSubject").value,chapter=pickVal($("wdChapter"),$("wdChapterNew")),topCon=pickVal($("wdConcept"),$("wdConceptNew"));
   if(!subject){$("wdMsg").textContent="This class has no subjects. Add one in Admin → Syllabus.";return}
   if(!chapter){$("wdMsg").textContent="Choose a chapter, or type the new chapter's name.";return}
-  const exam=$("wdExam").value.split(/[ ,\/]+/).map(x=>x.toUpperCase()).filter(Boolean);
+  const exam=getEx("wdExam");
   const add=wdData.qs.filter(q=>q.use).map((q,k)=>{const o={exam:exam.length?exam:["CBSE"],cls,subject,chapter,type:q.type,text:q.text,ans:q.type==="TF"?tfAns(q.ans):q.ans,marks:q.marks&&q.type===q.type0?q.marks:DEF_MARKS[q.type]||1};
     if(isMCQ(q.type))o.opts=q.opts.map(x=>x||"");if(q.type==="AR"){o.opts=AR_OPTS;o.reason=q.reason||""}if(q.type==="CS")o.case=q.passage||"";
     if(q.img){o.img=q.img.src;o.imgAR=q.img.ar;o.imgW=70}

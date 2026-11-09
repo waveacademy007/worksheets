@@ -558,3 +558,19 @@ input[type=range]{width:100%;accent-color:var(--accent);padding:0;border:0;backg
 .wq .aians{color:#5b3fc4;font-weight:700}
 .phstat{font-weight:600;color:var(--ink,#1a2b4c);min-height:1.2em}
 .filebtn.busy{opacity:.6;pointer-events:none}
+/* exam tick-boxes */
+.exbox{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;text-transform:none;letter-spacing:0}
+.exck{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);cursor:pointer;font-weight:600;font-size:.82rem;color:var(--ink,#1a2b4c)}
+.exck input{margin:0;accent-color:var(--brand,#0b6fb8)}
+.exck:has(input:checked){border-color:var(--brand,#0b6fb8);background:rgba(11,111,184,.08)}
+/* diagram crop */
+#dcModal{z-index:60}
+.dcwrap{display:flex;justify-content:center;background:#10233a;border-radius:12px;padding:12px;overflow:hidden}
+.dcstage{position:relative;display:inline-block;touch-action:none;user-select:none;line-height:0}
+.dcstage img{display:block;max-width:100%;max-height:58vh;pointer-events:none}
+.dcrect{position:absolute;box-shadow:0 0 0 9999px rgba(16,35,58,.55);outline:2px solid var(--gold,#d4a72c);cursor:move}
+.dcstage{max-width:100%}
+.dcrect i{position:absolute;width:22px;height:22px;background:#fff;border:2px solid var(--gold,#d4a72c);border-radius:50%;margin:-11px}
+.dcrect i[data-h=nw]{left:0;top:0;cursor:nwse-resize}.dcrect i[data-h=ne]{right:0;top:0;cursor:nesw-resize}
+.dcrect i[data-h=sw]{left:0;bottom:0;cursor:nesw-resize}.dcrect i[data-h=se]{right:0;bottom:0;cursor:nwse-resize}
+.f.exf{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;grid-column:1/-1}
