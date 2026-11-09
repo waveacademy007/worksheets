@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=3.6";
+import { createApi, DEMO } from "./api.js?v=3.7";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.6";
-import { SAMPLE } from "./sample-questions.js?v=3.6";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.6";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.7";
+import { SAMPLE } from "./sample-questions.js?v=3.7";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.7";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "3.6";
+const APP_VERSION = "3.7";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -739,7 +739,14 @@ fillSel($("aType"),TYPE_ORDER.map(k=>[k,TYPES[k]]));
 function addTypeUI(){const t=$("aType").value;$("aOpts").hidden=!isMCQ(t);$("aReasonL").hidden=t!=="AR";$("aCaseL").hidden=t!=="CS";
   $("aTextLabel").textContent=t==="AR"?"Assertion (A)":t==="CS"?"Questions on the passage (one per line)":t==="TF"?"Statement":t==="FB"?"Question (type ______ for the blank)":"Question";
   $("aAns").placeholder={MCQ:"e.g. b",MCQJ:"e.g. b",AR:"e.g. a",TF:"True or False",FB:"Word for the blank",NUM:"e.g. 9"}[t]||"Model answer (optional)";
-  $("aMarks").value=DEF_MARKS[t]||1;}
+  $("aMarks").value=DEF_MARKS[t]||1;ansPickUI();}
+// MCQ / Assertion–Reason: tick the correct option instead of typing the letter (the letter still lives in #aAns)
+function ansPickUI(){const t=$("aType").value,on=isMCQ(t)||t==="AR";$("aAnsL").hidden=on;$("aAnsPick").hidden=!on;if(!on)return;
+  const cur=($("aAns").value.trim().match(/^\(?([a-dA-D])\)?$/)||[])[1];const a=cur?cur.toLowerCase():"";
+  $("aAnsBtns").innerHTML="abcd".split("").map((L,i)=>{const txt=t==="AR"?AR_OPTS[i]:$("aO"+i).value.trim();
+    return `<button type="button" class="apb${a===L?" on":""}" role="radio" aria-checked="${a===L}" data-l="${L}"><b>${L}</b><span>${txt?mt(txt):'<i class="muted">empty</i>'}</span></button>`}).join("")}
+$("aAnsBtns").addEventListener("click",e=>{const b=e.target.closest(".apb");if(!b)return;$("aAns").value=$("aAns").value.trim().toLowerCase()===b.dataset.l?"":b.dataset.l;ansPickUI()});
+["aO0","aO1","aO2","aO3"].forEach(id=>$(id).addEventListener("input",()=>{clearTimeout(ansPickUI.t);ansPickUI.t=setTimeout(ansPickUI,250)}));
 $("aType").onchange=addTypeUI;
 // ---- Class → Subject → Chapter → Concept pickers (shared by Add question and Word import)
 const NEW="__new";
@@ -765,7 +772,7 @@ $("aConcept").onchange=()=>{$("aConceptNew").hidden=$("aConcept").value!==NEW;if
 let addKeep=null;   // remember the last chapter/concept so several questions can be added in a row
 let editing=null;   // the question being edited, or null when adding a new one
 const ADD_FIELDS=["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns","aChapterNew","aConceptNew"];
-function clearAddForm(){ADD_FIELDS.forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;$("aImgW").value="70";aImgUI();$("aErr").textContent="";$("aImgMsg").textContent=""}
+function clearAddForm(){ADD_FIELDS.forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;$("aImgW").value="70";aImgUI();$("aErr").textContent="";$("aImgMsg").textContent="";$("aPasteNote").hidden=true;ansPickUI()}
 function addMode(isEdit){$("addTitle").textContent=isEdit?"Edit question":"Add a question";$("addSave").textContent=isEdit?"Save changes":"Save question"}
 $("addOpen").onclick=()=>{if(editing){editing=null;clearAddForm();setEx("aExam",["CBSE"])}addMode(false);$("addModal").hidden=false;
   const k=addKeep&&(!nav.chapter||(addKeep.cls===nav.cls&&addKeep.subject===nav.subject&&addKeep.chapter===nav.chapter))?addKeep:{cls:nav.cls||10,subject:nav.subject,chapter:nav.chapter,concept:fConcept&&fConcept!=="\u0000"?fConcept:""};
@@ -831,7 +838,7 @@ async function openEdit(q){
   setEx("aExam",q.exam||[]);$("aClass").value=String(q.cls);
   addFill(0,{subject:q.subject,chapter:q.chapter,concept:q.concept||""});
   $("aMarks").value=q.marks??"";$("aText").value=q.text||"";$("aReason").value=q.reason||"";$("aCase").value=q.case||"";$("aAns").value=q.ans||"";
-  if(isMCQ(q.type))(q.opts||[]).forEach((o,i)=>{if(i<4)$("aO"+i).value=o});
+  if(isMCQ(q.type))(q.opts||[]).forEach((o,i)=>{if(i<4)$("aO"+i).value=o});ansPickUI();
   (q.src||[]).forEach(x=>srcRow(x.s,x.y));
   $("aImgW").value=String(q.imgW||70);aImgWUI();
   $("addModal").hidden=false;
@@ -849,6 +856,7 @@ $("addSave").onclick=async()=>{
   if(!chapter){$("aErr").textContent="Choose a chapter, or type the new chapter's name.";return}
   if($("aConcept").value===NEW&&!concept){$("aErr").textContent="Type the new concept's name, or choose No concept.";return}
   if(isMCQ(t)&&opts.some(o=>!o)){$("aErr").textContent="Fill all four options.";return}
+  if((isMCQ(t)||t==="AR")&&$("aAns").value.trim()&&!/^\(?[a-dA-D]\)?$/.test($("aAns").value.trim())){$("aErr").textContent="Tick the correct option.";return}
   if(t==="AR"&&!$("aReason").value.trim()){$("aErr").textContent="Write the Reason (R).";return}
   const q={exam:getEx("aExam"),cls:+$("aClass").value,subject:$("aSubject").value,chapter,type:t,text,ans:t==="TF"?tfAns($("aAns").value.trim()):$("aAns").value.trim(),marks:+$("aMarks").value||1};
   if(!q.exam.length)q.exam=["CBSE"];
@@ -1882,6 +1890,53 @@ EQ_FIELDS.forEach(id => $(id).addEventListener("paste", e => {
   f.value = f.value.slice(0, a) + text + f.value.slice(b); const p = a + text.length; f.setSelectionRange(p, p);
   toast("Pasted with equations");
 }));
+
+// ---- Smart paste: a question pasted with its options -> question box + Option a–d
+// Finds (a)…(b)…(c)…(d) labels (also a) A. (A) 1) (1)) in order, outside $…$ maths.
+function splitQOpts(raw) {
+  let t = String(raw || "").replace(/\r/g, "").trim().replace(/^(?:Q(?:ues(?:tion)?)?\s*\.?\s*)?\d{1,3}\s*[.):\-–]\s*/i, "");
+  const mask = t.replace(/\$[^$]*\$/g, m => "#".repeat(m.length));      // labels inside maths do not count
+  const STY = [
+    L => new RegExp("\\(\\s*" + L + "\\s*\\)", "gi"),                      // (a)  (A)  (1)
+    L => new RegExp("(?:^|[\\s.,;:?])" + L + "\\)(?=\\s)", "gi"),        // a)   1)
+    L => new RegExp("(?:^|\\n)[ \\t]*" + L + "[.:](?=\\s)", "gi")        // a.   A.   1.  at the start of a line
+  ];
+  let best = null;
+  for (const labels of [["a", "b", "c", "d"], ["1", "2", "3", "4"]]) for (const mk of STY) {
+    const first = mk(labels[0]); let m0;
+    while ((m0 = first.exec(mask))) {                 // try every "a" label; a later full set wins over an earlier one
+      const pos = [{ st: m0.index + m0[0].match(/^[\s.,;:?]*/)[0].length, end: m0.index + m0[0].length }]; let from = pos[0].end;
+      for (const L of labels.slice(1)) { const re = mk(L); re.lastIndex = from; const m = re.exec(mask); if (!m) break;
+        pos.push({ st: m.index + m[0].match(/^[\s.,;:?]*/)[0].length, end: m.index + m[0].length }); from = pos[pos.length - 1].end; }
+      if (pos.length >= 2 && pos[0].st > 0 && (!best || pos.length >= best.pos.length)) best = { pos };
+      if (first.lastIndex === m0.index) first.lastIndex++;
+    }
+  }
+  if (!best) return null;
+  const p = best.pos, q = t.slice(0, p[0].st).trim();
+  if (!q) return null;
+  const opts = p.map((x, i) => t.slice(x.end, i + 1 < p.length ? p[i + 1].st : undefined).replace(/\s*\n\s*/g, " ").trim());
+  if (opts.some(o => !o)) return null;
+  return { q, opts };
+}
+let pasteUndo = null;
+$("aText").addEventListener("paste", e => {
+  const t0 = $("aType").value; if (t0 === "AR" || t0 === "CS") return;
+  const before = { text: $("aText").value, opts: [0, 1, 2, 3].map(i => $("aO" + i).value), type: t0, marks: $("aMarks").value, ans: $("aAns").value };
+  setTimeout(() => {                                  // after the paste (and the Word-equation paste) has landed
+    const raw = $("aText").value, r = splitQOpts(raw); if (!r) return;
+    pasteUndo = { ...before, text: raw };            // Undo gives back the text exactly as pasted
+    $("aText").value = r.q;
+    if (!isMCQ($("aType").value)) { $("aType").value = "MCQ"; addTypeUI(); }
+    [0, 1, 2, 3].forEach(i => { $("aO" + i).value = r.opts[i] || ""; });
+    $("aAns").value = ""; ansPickUI();
+    $("aPasteNote").querySelector("span").textContent = `${r.opts.length} options filled from paste` + (r.opts.length < 4 ? " – fill the rest" : "");
+    $("aPasteNote").hidden = false; clearTimeout(pasteUndo.t); pasteUndo.t = setTimeout(() => { $("aPasteNote").hidden = true; }, 20000);
+  }, 0);
+});
+$("aPasteUndo").onclick = () => { const u = pasteUndo; if (!u) return;
+  $("aType").value = u.type; addTypeUI(); $("aMarks").value = u.marks; $("aText").value = u.text; u.opts.forEach((o, i) => { $("aO" + i).value = o; }); $("aAns").value = u.ans; ansPickUI();
+  $("aPasteNote").hidden = true; pasteUndo = null; };
 
 // ================= Import from photo (admin): Gemini reads the photo =================
 // The key lives in Firestore private/gemini (rules: admins only). The admin's browser calls Gemini directly.

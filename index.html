@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
-<link rel="stylesheet" href="app.css?v=3.6">
+<link rel="stylesheet" href="app.css?v=3.7">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js" defer></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -436,6 +436,7 @@
       </div>
       <label class="f" id="aCaseL" hidden>Case passage<textarea id="aCase"></textarea></label>
       <label class="f"><span id="aTextLabel">Question</span><textarea id="aText"></textarea></label>
+      <div class="pnote" id="aPasteNote" hidden><span>Options filled from paste</span><button class="btn" type="button" id="aPasteUndo">Undo</button></div>
       <div class="eqbar"><button class="btn eqbtn" type="button" id="eqOpen"><b>∑</b> Equation</button><span class="note" id="eqHint">Goes into the box you last tapped (question, options, answer…). Tap an equation's code in a box first to edit it.</span></div>
       <div class="f">Diagram / image (optional)
         <div class="bar" style="margin:4px 0 0;align-items:center">
@@ -460,7 +461,8 @@
         <label class="f">Option c<input type="text" id="aO2"></label>
         <label class="f">Option d<input type="text" id="aO3"></label>
       </div>
-      <label class="f">Answer<input type="text" id="aAns" placeholder="e.g. b"></label>
+      <label class="f" id="aAnsL">Answer<input type="text" id="aAns" placeholder="e.g. b"></label>
+      <div class="f anspick" id="aAnsPick" hidden>Correct answer – tap to tick<div class="apk" id="aAnsBtns" role="radiogroup" aria-label="Correct answer"></div></div>
       <div class="f">Source &amp; year (optional)
         <div id="aSrcRows" class="srcrows"></div>
         <button class="btn" type="button" id="aSrcAdd" style="justify-self:start">+ Add source</button>
@@ -544,6 +546,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
-<script type="module" src="app.js?v=3.6"></script>
+<script type="module" src="app.js?v=3.7"></script>
 </body>
 </html>
