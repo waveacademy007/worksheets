@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=3.7";
+import { createApi, DEMO } from "./api.js?v=3.8";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.7";
-import { SAMPLE } from "./sample-questions.js?v=3.7";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.7";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.8";
+import { SAMPLE } from "./sample-questions.js?v=3.8";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.8";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "3.7";
+const APP_VERSION = "3.8";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -609,6 +609,87 @@ async function saveToBank(list) {
   if (f && curView === "bank" && nav.subject === f.subject && nav.chapter === f.chapter) loadQuestions();
   return withSeq.length;
 }
+// ================= Duplicate check (same class + subject + chapter) =================
+// similarity 0–1 from letter-triplets of the text + options, ignoring spaces, punctuation and LaTeX commands
+function dupKey(q) {
+  const s = [q.case, q.text, q.reason, ...(isMCQ(q.type) ? q.opts || [] : [])].join(" ").toLowerCase()
+    .replace(/\\(d?frac|sqrt|vec|hat|overrightarrow|left|right|mathrm|text|rm|times|cdot|quad|qquad|displaystyle)/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+  const g = new Set(); for (let i = 0; i + 3 <= s.length; i++) g.add(s.slice(i, i + 3)); if (!g.size && s) g.add(s);
+  return g;
+}
+function dupScore(a, b) { if (!a.size || !b.size) return 0; let n = 0; const [x, y] = a.size < b.size ? [a, b] : [b, a]; for (const t of x) if (y.has(t)) n++; return 2 * n / (a.size + b.size); }
+const DUP_MIN = 0.65, DUP_SAME = 0.9;
+// One dialog: the new question + the similar ones in the bank. Resolves with what the admin chose.
+function dupDialog(nq, matches, step) {
+  return new Promise(async res => {
+    const cards = [{ q: nq, isNew: true }, ...matches.map(m => ({ q: m.q, score: m.score }))];
+    const need = matches.filter(m => m.q.hasImg && !imgCache[m.q.id]).map(m => m.q.id);
+    if (need.length) { try { Object.assign(imgCache, await api.images(need)); } catch (e) {} }
+    $("dupTitle").textContent = (matches.some(m => m.score >= DUP_SAME) ? "Same question already in the bank" : "Similar question found") + (step ? ` (${step})` : "");
+    $("dupMsg").textContent = "";
+    $("dupList").innerHTML = cards.map((c, i) => { const q = c.q, img = c.isNew ? q.img : imgCache[q.id];
+      const tag = c.isNew ? `<span class="dtag new">${nq._editing ? "Your edited question" : "New question"}</span>` : `<span class="dtag ${c.score >= DUP_SAME ? "same" : "sim"}">In bank · ${Math.round(c.score * 100)}% ${c.score >= DUP_SAME ? "same" : "similar"}</span>`;
+      const opts = isMCQ(q.type) ? `<ol class="dopts" type="a">${(q.opts || []).map((o, k) => `<li${String(q.ans || "").toLowerCase() === "abcd"[k] ? ' class="ok"' : ""}>${mt(o)}</li>`).join("")}</ol>` : "";
+      return `<div class="dupc${c.isNew ? " isnew" : ""}" data-i="${i}">
+        <div class="dtop"><label class="dkeep"><input type="checkbox" checked data-k="${i}"><span>Keep</span></label>${tag}<label class="dword"><input type="radio" name="dupWord" value="${i}"><span>Use this wording</span></label></div>
+        <div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span><span class="chip">${esc(normExam(q.exam, q.src).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}${q.concept ? `<span class="chip conchip">${esc(q.concept)}</span>` : ""}</div>
+        ${q.case ? `<div class="dtxt dcase">${mt(q.case)}</div>` : ""}<div class="dtxt">${mt(q.text)}</div>${q.type === "AR" && q.reason ? `<div class="dtxt"><b>R:</b> ${mt(q.reason)}</div>` : ""}${opts}
+        ${img ? `<img class="dimg" src="${img}" alt="Diagram">` : q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}
+        ${!isMCQ(q.type) && q.ans ? `<div class="dans">Answer: ${mt(q.ans)}</div>` : ""}</div>`; }).join("");
+    const ticked = () => [...$("dupList").querySelectorAll("[data-k]")].filter(x => x.checked).map(x => +x.dataset.k);
+    const paint = () => { const t = new Set(ticked()); $("dupList").querySelectorAll(".dupc").forEach(el => el.classList.toggle("off", !t.has(+el.dataset.i)));
+      const del = cards.filter((c, i) => !c.isNew && !t.has(i)).length; $("dupSave").textContent = del ? `Save ticked · delete ${del} old` : "Save ticked"; };
+    $("dupList").onchange = paint; paint();
+    const done = v => { $("dupModal").hidden = true; $("dupSave").onclick = $("dupMerge").onclick = $("dupCancel").onclick = $("dupX").onclick = null; res(v); };
+    $("dupCancel").onclick = $("dupX").onclick = () => done({ act: "cancel" });
+    $("dupSave").onclick = () => { const t = new Set(ticked()); if (!t.size) { $("dupMsg").textContent = "Tick at least one question, or tap Cancel."; return; }
+      done({ act: "save", keepNew: t.has(0), del: cards.filter((c, i) => !c.isNew && !t.has(i)).map(c => c.q) }); };
+    $("dupMerge").onclick = () => { const t = new Set(ticked()), w = $("dupList").querySelector("[name=dupWord]:checked");
+      if (t.size < 2) { $("dupMsg").textContent = "Tick at least two questions to merge them."; return; }
+      if (!w || !t.has(+w.value)) { $("dupMsg").textContent = "Choose “Use this wording” on one of the ticked questions."; return; }
+      const k = +w.value, group = cards.filter((c, i) => t.has(i)), keep = cards[k];
+      const src = []; for (const c of group) for (const x of c.q.src || []) if (!src.some(y => y.s === x.s && (y.y || "") === (x.y || ""))) src.push(x);
+      const exam = normExam(group.flatMap(c => c.q.exam || []), src);
+      const ans = keep.q.ans || (group.find(c => c.q.type === keep.q.type && c.q.ans) || {}).q?.ans || "";
+      const concept = keep.q.concept || (group.find(c => c.q.concept) || {}).q?.concept || "";
+      done({ act: "merge", keepNew: !!keep.isNew, keeper: keep.isNew ? null : keep.q, src, exam, ans, concept,
+        del: cards.filter((c, i) => !c.isNew && c !== keep).map(c => c.q) }); };
+    $("dupModal").hidden = false; $("dupList").scrollTop = 0;
+  });
+}
+// Check new questions against their chapters. Returns null if cancelled, else { keep: [...new questions to save], del: [...old], upd: [...old with changes] }
+async function dedupe(list, opts = {}) {
+  const out = { keep: [], del: new Map(), upd: new Map() }, bank = new Map();
+  let todo = 0;
+  for (const q of list) { const k = q.cls + "|" + q.subject + "|" + q.chapter;
+    if (!bank.has(k)) { let qs = []; try { qs = await api.questions(q.cls, q.subject, q.chapter); } catch (e) {} bank.set(k, qs.map(x => ({ q: x, key: dupKey(x) }))); } }
+  const found = list.map(q => { const kq = dupKey(q), here = bank.get(q.cls + "|" + q.subject + "|" + q.chapter);
+    const m = here.filter(x => x.q.id !== opts.selfId).map(x => ({ q: x.q, score: dupScore(kq, x.key) })).filter(x => x.score >= DUP_MIN).sort((a, b) => b.score - a.score).slice(0, 6);
+    if (m.length) todo++; return m; });
+  let step = 0;
+  for (let i = 0; i < list.length; i++) {
+    const q = list[i], m = found[i].filter(x => !out.del.has(x.q.id)).map(x => ({ ...x, q: out.upd.get(x.q.id) || x.q }));
+    if (!m.length) { out.keep.push(q); continue; }
+    step++; const r = await dupDialog(opts.editing ? { ...q, _editing: true } : q, m, todo > 1 ? `${step} of ${todo}` : "");
+    if (r.act === "cancel") return null;
+    r.del.forEach(o => { out.del.set(o.id, o); out.upd.delete(o.id); });
+    if (r.act === "save") { if (r.keepNew) out.keep.push(q); else if (opts.editing) out.dropSelf = true; continue; }
+    const patch = { src: r.src, exam: r.exam, ...(r.ans ? { ans: r.ans } : {}), ...(r.concept ? { concept: r.concept } : {}) };
+    if (r.keepNew) out.keep.push({ ...q, ...patch });
+    else { out.upd.set(r.keeper.id, { ...r.keeper, ...patch }); if (opts.editing) out.dropSelf = true; }
+  }
+  return out;
+}
+// Delete / update the old questions the admin chose in the duplicate dialogs
+async function applyDedupe(d) {
+  for (const q of d.del.values()) { await api.deleteQuestion(q); picked.delete(q.id); delete imgCache[q.id]; current = current.filter(x => x.id !== q.id); }
+  for (const q of d.upd.values()) { const data = { ...q }; delete data.id; delete data.hasImg; delete data.createdAt; delete data.updatedAt;
+    const saved = await api.updateQuestion(q.id, data, "keep"); const i = current.findIndex(x => x.id === q.id); if (i >= 0) current[i] = saved; if (picked.has(q.id)) picked.set(q.id, saved); }
+  if (d.del.size || d.upd.size) { savePicked(); try { chapterMap = await api.chapters(); mergeChapterMap(syllabus, chapterMap); } catch (e) {} if (curView === "bank" && nav.chapter) renderList(); updateCounts(); }
+  return { deleted: d.del.size, merged: d.upd.size };
+}
+const dedupeNote = (r, saved) => [saved ? `${saved} saved` : "", r.merged ? `${r.merged} merged into old` : "", r.deleted ? `${r.deleted} old deleted` : ""].filter(Boolean).join(" · ");
 async function loadPickedImages() {
   const need = [...picked.values()].filter(q => q.hasImg && !imgCache[q.id]).map(q => q.id);
   if (need.length) { try { Object.assign(imgCache, await api.images(need)); } catch (e) { toast("Some diagrams could not be loaded."); } }
@@ -864,13 +945,25 @@ $("addSave").onclick=async()=>{
   if(concept)q.concept=concept;
   if(aImg){q.img=aImg.src;q.imgAR=aImg.ar;q.imgW=+$("aImgW").value}
   const qsrc=readSrcRows();if(qsrc.length)q.src=qsrc;
-  if(editing){await saveEdit(editing,q);return}
+  // look for the same / similar question in this chapter first
+  $("addSave").disabled=true;$("aErr").textContent="Checking for similar questions…";
+  let d,r;
+  try{d=await dedupe([q],editing?{selfId:editing.id,editing:true}:{});if(!d){$("aErr").textContent="";$("addSave").disabled=false;return}
+    r=await applyDedupe(d)}
+  catch(err){$("aErr").textContent="Could not check or update the bank. Check your internet and try again.";$("addSave").disabled=false;return}
+  $("addSave").disabled=false;$("aErr").textContent="";
+  if(editing){
+    if(d.dropSelf){try{await api.deleteQuestion(editing)}catch(e){$("aErr").textContent="Could not remove the edited question. Try again.";return}
+      current=current.filter(x=>x.id!==editing.id);picked.delete(editing.id);savePicked();if(nav.chapter)renderList();updateCounts();
+      editing=null;clearAddForm();addMode(false);setEx("aExam",["CBSE"]);$("addModal").hidden=true;toast(dedupeNote(r,0)||"Done");return}
+    await saveEdit(editing,d.keep[0]);return}
+  if(!d.keep.length){clearAddForm();$("addModal").hidden=true;toast(dedupeNote(r,0)||"Nothing saved");if(nav.chapter)loadQuestions();return}
   $("addSave").disabled=true;$("aErr").textContent="Saving…";
-  try{await saveToBank([q])}catch(err){$("aErr").textContent="Could not save. Check your internet and try again.";$("addSave").disabled=false;return}
+  try{await saveToBank(d.keep)}catch(err){$("aErr").textContent="Could not save. Check your internet and try again.";$("addSave").disabled=false;return}
   $("addSave").disabled=false;
   ["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns","aChapterNew","aConceptNew"].forEach(i=>$(i).value="");
   addKeep={cls:q.cls,subject:q.subject,chapter:q.chapter,concept:q.concept||""};$("aSrcRows").innerHTML="";aImg=null;aImgUI();$("aErr").textContent="";$("addModal").hidden=true;
-  toast("Question saved to the bank");
+  toast(r.deleted||r.merged?"Question saved · "+dedupeNote(r,0):"Question saved to the bank");
 };
 
 
@@ -980,7 +1073,9 @@ $("imPasteGo").onclick=()=>{const t=$("imPaste").value;if(!t.trim()){$("imMsg").
   const rows=parseTSV(t);if(rows.length&&rows[0].length<3){$("imMsg").textContent="Rows were not recognised. Copy the cells straight from the sheet, including the header row.";return}
   imReviewShow(rowsToQuestions(rows,{}))};
 $("imGo").onclick=async()=>{if(!imReady.length)return;const b=$("imGo");b.disabled=true;$("imMsg").textContent="Saving to the question bank…";
-  try{const n=await saveToBank(imReady);imReady=[];$("imModal").hidden=true;$("imPaste").value="";toast(`${n} question${n>1?"s":""} imported`)}
+  try{$("imMsg").textContent="Checking for similar questions…";const d=await dedupe(imReady);if(!d){$("imMsg").textContent="Import cancelled. Nothing was changed.";return}
+    const r=await applyDedupe(d);$("imMsg").textContent="Saving to the question bank…";const n=d.keep.length?await saveToBank(d.keep):0;if(!n&&nav.chapter)loadQuestions();
+    imReady=[];$("imModal").hidden=true;$("imPaste").value="";toast(dedupeNote(r,n)||"Nothing to save")}
   catch(err){$("imMsg").textContent="Could not save. Check your internet and try again."}finally{b.disabled=false}};
 $("imBack").onclick=()=>imShow("start");
 $("impOpen").onclick=()=>{$("imModal").hidden=false;imShow("start");$("imMsg").textContent=""};
@@ -1247,8 +1342,11 @@ $("wdGo").onclick=async()=>{const cls=+$("wdCls").value,subject=$("wdSubject").v
     const common=$("wdSrc").value?[{s:$("wdSrc").value,y:/^(19|20)\d{2}$/.test($("wdYear").value.trim())?$("wdYear").value.trim():""}]:[];
     const sr=q.src&&q.src.length?q.src:common;if(sr.length)o.src=sr;
     const con=q.concept==="\u0000"?"":q.concept||topCon;if(con)o.concept=con;return o});
-  const b=$("wdGo");b.disabled=true;$("wdMsg").textContent="Saving to the question bank…";
-  try{await saveToBank(add);$("wdModal").hidden=true;toast(`${add.length} question${add.length===1?"":"s"} imported from Word`)}
+  const b=$("wdGo");b.disabled=true;$("wdMsg").textContent="Checking for similar questions…";
+  try{const d=await dedupe(add);if(!d){$("wdMsg").textContent="Import cancelled. Nothing was changed.";return}
+    const r=await applyDedupe(d);$("wdMsg").textContent="Saving to the question bank…";
+    if(d.keep.length)await saveToBank(d.keep);else if(nav.chapter)loadQuestions();
+    $("wdModal").hidden=true;toast(dedupeNote(r,d.keep.length)||"Nothing to save")}
   catch(err){$("wdMsg").textContent="Could not save. Check your internet and try again."}finally{b.disabled=false}};
 $("wdOpen").onclick=()=>{$("wdTitle").textContent="Import from Word";$("wdModal").hidden=false;$("wdStart").hidden=false;$("wdReview").hidden=true;$("wdMsg").textContent=""};
 $("wdBack").onclick=()=>{$("wdStart").hidden=false;$("wdReview").hidden=true};
