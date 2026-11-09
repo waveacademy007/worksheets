@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
-<link rel="stylesheet" href="app.css?v=3.4">
+<link rel="stylesheet" href="app.css?v=3.5">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js" defer></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -379,7 +379,7 @@
     <div id="phKeyBox" class="phbox" hidden>
       <p class="note" style="margin:0"><b>One-time setup.</b> Open <b>aistudio.google.com</b> → sign in → <b>Get API key</b> → copy the key and paste it here. It is saved where only you (admin) can read it.</p>
       <label class="f">Gemini API key<input type="password" id="phKey" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <label class="f">Model<input type="text" id="phModel" value="gemini-2.5-flash" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label class="f">Model (leave empty – the app picks the best one)<input type="text" id="phModel" value="" placeholder="automatic" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <div class="bar" style="margin:0"><span class="grow"></span><button class="btn primary" id="phKeySave">Save key</button></div>
     </div>
     <div id="phMain" class="phbox" hidden>
@@ -534,6 +534,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
-<script type="module" src="app.js?v=3.4"></script>
+<script type="module" src="app.js?v=3.5"></script>
 </body>
 </html>

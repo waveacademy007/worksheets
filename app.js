@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=3.4";
+import { createApi, DEMO } from "./api.js?v=3.5";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.4";
-import { SAMPLE } from "./sample-questions.js?v=3.4";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.4";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.5";
+import { SAMPLE } from "./sample-questions.js?v=3.5";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.5";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "3.4";
+const APP_VERSION = "3.5";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -1839,12 +1839,12 @@ const PH_SCHEMA = { type: "OBJECT", properties: { questions: { type: "ARRAY", it
   source: { type: "STRING" }, topic: { type: "STRING" }, marks: { type: "INTEGER" }, figure_box: { type: "ARRAY", items: { type: "INTEGER" } } },
   required: ["type", "text"] } } }, required: ["questions"] };
 async function phLoadCfg() { if (phCfg) return phCfg; try { phCfg = (await api.getPrivate("gemini")) || {}; } catch (e) { phCfg = {}; } return phCfg; }
-function phShow() { const has = !!(phCfg && phCfg.key); $("phKeyBox").hidden = has; $("phMain").hidden = !has; if (!has) { $("phKey").value = ""; $("phModel").value = (phCfg && phCfg.model) || "gemini-2.5-flash"; } }
+function phShow() { const has = !!(phCfg && phCfg.key); $("phKeyBox").hidden = has; $("phMain").hidden = !has; if (!has) { $("phKey").value = ""; $("phModel").value = (phCfg && phCfg.model) || ""; } }
 $("phOpen").onclick = async () => { $("phModal").hidden = false; $("phStat").textContent = "Loading…"; $("phKeyBox").hidden = true; $("phMain").hidden = true; await phLoadCfg(); $("phStat").textContent = ""; phShow(); };
 $("phX").onclick = () => { $("phModal").hidden = true; };
-$("phKeyEdit").onclick = () => { $("phKeyBox").hidden = false; $("phMain").hidden = true; $("phKey").value = ""; $("phModel").value = phCfg.model || "gemini-2.5-flash"; };
+$("phKeyEdit").onclick = () => { $("phKeyBox").hidden = false; $("phMain").hidden = true; $("phKey").value = ""; $("phModel").value = phCfg.model || ""; };
 $("phKeySave").onclick = async () => {
-  const key = $("phKey").value.trim(), model = $("phModel").value.trim() || "gemini-2.5-flash";
+  const key = $("phKey").value.trim(), model = phModelName($("phModel").value) || "";
   if (!key && !(phCfg && phCfg.key)) { $("phStat").textContent = "Paste the API key first."; return; }
   $("phStat").textContent = "Saving…";
   try { phCfg = { key: key || phCfg.key, model }; await api.setPrivate("gemini", phCfg); $("phStat").textContent = "Saved. Now choose photos."; phShow(); }
@@ -1870,13 +1870,34 @@ function phCrop(canvas, box) {
   const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(canvas, sx, sy, ex - sx, ey - sy, 0, 0, c.width, c.height);
   return { src: c.toDataURL("image/jpeg", 0.88), ar: c.width / c.height };
 }
-async function phAsk(b64, solve) {
+// clean what was typed in the model box: "models/gemini-x" or spaces -> "gemini-x"
+const phModelName = m => { m = String(m || "").trim().replace(/^.*models\//, "").replace(/\s+/g, "-").toLowerCase(); return /^[a-z0-9][a-z0-9.\-]*$/.test(m) ? m : ""; };
+// ask Google which models this key can use, and pick the newest normal Flash model
+async function phPickModel() {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(phCfg.key)}`);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error((j.error && j.error.message) || r.statusText); e.status = r.status; throw e; }
+  const ok = (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent"))
+    .map(m => m.name.replace(/^models\//, "")).filter(n => /^gemini/.test(n) && !/(tts|image|audio|live|embed|robotics|computer|thinking-exp|learnlm|nano)/.test(n));
+  const ver = n => +((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0);
+  const score = n => (/flash/.test(n) ? 1000 : 0) + (/lite/.test(n) ? -300 : 0) + (/preview|exp/.test(n) ? -50 : 0) + (/latest/.test(n) ? -20 : 0) + ver(n) * 10;
+  ok.sort((a, b) => score(b) - score(a));
+  if (!ok.length) throw new Error("No Gemini model is available for this key.");
+  return ok[0];
+}
+async function phAsk(b64, solve, retried) {
+  if (!phModelName(phCfg.model)) { phCfg = { ...phCfg, model: await phPickModel() }; try { await api.setPrivate("gemini", phCfg); } catch (e) {} }
   const prompt = PH_PROMPT.replace("SOLVE_RULE", solve ? "If the answer is not printed, solve the question carefully and give your answer with answer_by_ai = true." : "If it is not printed, leave answer empty.");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(phCfg.model || "gemini-2.5-flash")}:generateContent?key=${encodeURIComponent(phCfg.key)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(phModelName(phCfg.model) || "gemini-flash-latest")}:generateContent?key=${encodeURIComponent(phCfg.key)}`;
   const body = { contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: b64 } }] }],
     generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: PH_SCHEMA } };
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
+  // wrong / old model name -> find a working model once, save it, try again
+  if (!r.ok && !retried && (r.status === 404 || (r.status === 400 && /model/i.test((j.error && j.error.message) || "")))) {
+    const m = await phPickModel(); phCfg = { ...phCfg, model: m }; try { await api.setPrivate("gemini", phCfg); } catch (e) {}
+    return phAsk(b64, solve, true);
+  }
   if (!r.ok) { const m = (j.error && j.error.message) || r.statusText; const e = new Error(m); e.status = r.status; throw e; }
   const txt = (((j.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || "").join("") || "";
   const data = JSON.parse(txt || "{}"); return Array.isArray(data.questions) ? data.questions : [];
@@ -1902,7 +1923,7 @@ $("phFiles").addEventListener("change", async e => {
   for (let i = 0; i < files.length; i++) {
     $("phStat").textContent = `Reading photo ${i + 1} of ${files.length}… (this can take up to a minute)`;
     try { const p = await phPrepare(files[i]); const qs = await phAsk(p.b64, solve); qs.forEach(g => all.push(phToReview(g, p.canvas, all.length + 1))); }
-    catch (err) { fail++; lastErr = err.status === 400 && /key/i.test(err.message) ? "The API key is not valid. Tap “Change API key”." : err.status === 429 ? "Gemini's free limit is used up for now. Try again later." : err.status === 404 ? "This Gemini model name is not available. Tap “Change API key / model”." : err.message === "badimage" ? "A photo could not be opened." : "Could not reach Gemini. Check your internet. (" + (err.message || "error") + ")"; }
+    catch (err) { fail++; lastErr = err.status === 400 && /key/i.test(err.message) ? "The API key is not valid. Tap “Change API key”." : err.status === 429 ? "Gemini's free limit is used up for now. Try again later." : err.status === 404 || /model/i.test(err.message || "") ? "Gemini model problem: " + err.message + " Tap “Change API key / model” and leave the model box empty." : err.message === "badimage" ? "A photo could not be opened." : "Could not reach Gemini. Check your internet. (" + (err.message || "error") + ")"; }
   }
   btn && btn.classList.remove("busy"); e.target.disabled = false;
   if (!all.length) { $("phStat").textContent = (fail ? lastErr : "No questions were found in the photo(s).") ; return; }
