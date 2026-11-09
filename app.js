@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=3.2";
+import { createApi, DEMO } from "./api.js?v=3.3";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.2";
-import { SAMPLE } from "./sample-questions.js?v=3.2";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.2";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.3";
+import { SAMPLE } from "./sample-questions.js?v=3.3";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.3";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "3.2";
+const APP_VERSION = "3.3";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -1176,7 +1176,7 @@ $("wdGo").onclick=async()=>{const cls=+$("wdCls").value,subject=$("wdSubject").v
   const b=$("wdGo");b.disabled=true;$("wdMsg").textContent="Saving to the question bank…";
   try{await saveToBank(add);$("wdModal").hidden=true;toast(`${add.length} question${add.length===1?"":"s"} imported from Word`)}
   catch(err){$("wdMsg").textContent="Could not save. Check your internet and try again."}finally{b.disabled=false}};
-$("wdOpen").onclick=()=>{$("wdModal").hidden=false;$("wdStart").hidden=false;$("wdReview").hidden=true;$("wdMsg").textContent=""};
+$("wdOpen").onclick=()=>{$("wdTitle").textContent="Import from Word";$("wdModal").hidden=false;$("wdStart").hidden=false;$("wdReview").hidden=true;$("wdMsg").textContent=""};
 $("wdBack").onclick=()=>{$("wdStart").hidden=false;$("wdReview").hidden=true};
 $("wdClose").onclick=()=>{$("wdModal").hidden=true};
 $("wdModal").addEventListener("click",e=>{if(e.target.id==="wdModal")$("wdModal").hidden=true});
@@ -1732,15 +1732,20 @@ const EQ_TABS = [
     ["\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}", "\\begin{bmatrix} □ & □ \\\\ □ & □ \\end{bmatrix}", "matrix 2×2"],
     ["\\begin{bmatrix}a&b&c\\\\d&e&f\\\\g&h&i\\end{bmatrix}", "\\begin{bmatrix} □ & □ & □ \\\\ □ & □ & □ \\\\ □ & □ & □ \\end{bmatrix}", "matrix 3×3"],
     ["\\begin{cases}a\\\\b\\end{cases}", "\\begin{cases} □ & □ \\\\ □ & □ \\end{cases}", "cases"]]],
-  ["Greek", "alpha beta gamma delta epsilon eta theta lambda mu nu pi rho sigma tau phi chi psi omega kappa xi zeta Delta Omega Phi Sigma Theta Lambda Gamma Psi".split(" ").map(g => ["\\" + g, "\\" + g + " "])],
+  ["Greek", [["\\hat{\\imath}", "\\hat{\\imath} ", "i cap"], ["\\hat{\\jmath}", "\\hat{\\jmath} ", "j cap"], ["\\hat{k}", "\\hat{k} ", "k cap"]].concat("alpha beta gamma delta epsilon eta theta lambda mu nu pi rho sigma tau phi chi psi omega kappa xi zeta Delta Omega Phi Sigma Theta Lambda Gamma Psi".split(" ").map(g => ["\\" + g, "\\" + g + " "]))],
   ["Symbols", "times cdot pm mp approx propto neq leq geq equiv sim rightarrow Rightarrow rightleftharpoons therefore because angle perp parallel hbar infty".split(" ").map(g => ["\\" + g, "\\" + g + " "]).concat([["\\%", "\\%"], ["'", "'"]])]
 ];
 let eqTab = 0, eqField = null, eqRange = null;
 const EQ_FIELDS = ["aText", "aReason", "aCase", "aO0", "aO1", "aO2", "aO3", "aAns"];
 let eqLast = "aText";
 EQ_FIELDS.forEach(id => $(id).addEventListener("focus", () => { eqLast = id; }));
+function eqQPreview(code) {
+  const f = eqField || $("aText"), v = f ? f.value : "", [a, b] = eqRange || [v.length, v.length];
+  const eq = code ? `<span class="eqcur">${texHTML(code.replace(/□/g, "\\square "))}</span>` : `<span class="eqcur">&nbsp;∑&nbsp;</span>`;
+  $("eqQPrev").innerHTML = (mt(v.slice(0, a)) + (a > 0 && !/\s$/.test(v.slice(0, a)) ? " " : "") + eq + " " + mt(v.slice(b))).replace(/\n/g, "<br>") || eq;
+}
 function eqPreview() {
-  const code = $("eqCode").value.trim();
+  const code = $("eqCode").value.trim(); eqQPreview(code);
   if (!code) { $("eqPrev").innerHTML = `<span class="ph">Your equation appears here</span>`; return; }
   if (!window.katex) { $("eqPrev").textContent = code; return; }
   try { $("eqPrev").innerHTML = katex.renderToString(code.replace(/□/g, "\\square "), { throwOnError: false, strict: "ignore", displayMode: true }); }
@@ -1811,6 +1816,103 @@ EQ_FIELDS.forEach(id => $(id).addEventListener("paste", e => {
   f.value = f.value.slice(0, a) + text + f.value.slice(b); const p = a + text.length; f.setSelectionRange(p, p);
   toast("Pasted with equations");
 }));
+
+// ================= Import from photo (admin): Gemini reads the photo =================
+// The key lives in Firestore private/gemini (rules: admins only). The admin's browser calls Gemini directly.
+let phCfg = null;
+const PH_TYPES = ["MCQ", "MCQJ", "FB", "TF", "AR", "GR", "NUM", "M1", "VSA", "SA", "PR", "CS", "LA"];
+const PH_PROMPT = `You read photos or screenshots of exam questions (Physics, Chemistry, Maths, Biology; CBSE, JEE, NEET) and return every question you see, exactly as printed.
+Rules:
+- Copy the wording exactly. Write ALL mathematics (symbols, variables, units with powers, fractions, roots, vectors, integrals, sums, limits, matrices, chemical formulas with subscripts) as LaTeX inside single dollar signs, e.g. $\\frac{x}{10}$, $X_{L}=70\\,\\Omega$, $\\vec{F}$, $\\hat{\\imath}$, $\\int_{0}^{1} x^{2}\\,dx$, $\\begin{vmatrix} a & b \\\\ c & d \\end{vmatrix}$. Plain words stay outside the dollar signs.
+- Ignore website or app parts that are not the question: buttons, "Show answer", "Your answer", "Tap an option", menus, adverts, question-number badges.
+- type: MCQ (4 options), MCQJ (4 options and the source is JEE or NEET), FB (fill in the blank, no options), TF (true/false), AR (assertion and reason), GR (give reason), NUM (numerical answer, no options, JEE style), M1/VSA/SA/LA (written answer of 1/2/3/5 marks), PR (prove/show that), CS (case study with a passage).
+- options: the option texts only, without "(a)", "A." labels, in order.
+- For AR: "text" is the Assertion only and "reason" is the Reason; options can be empty.
+- For CS: "passage" is the passage, "text" the sub-questions one per line.
+- source: exam and year if printed, e.g. "JEE Main 2023" or "NEET 2021". topic: the topic or concept tag if printed.
+- answer: only if the answer is printed in the photo (MCQ/AR: the letter a, b, c or d; TF: True or False; otherwise the answer text). SOLVE_RULE
+- figure_box: if the question has a diagram or figure, its box in the photo as [ymin, xmin, ymax, xmax] on a 0-1000 scale; otherwise an empty list.
+- If no question is visible, return an empty list.`;
+const PH_SCHEMA = { type: "OBJECT", properties: { questions: { type: "ARRAY", items: { type: "OBJECT", properties: {
+  type: { type: "STRING", enum: PH_TYPES }, text: { type: "STRING" }, reason: { type: "STRING" }, passage: { type: "STRING" },
+  options: { type: "ARRAY", items: { type: "STRING" } }, answer: { type: "STRING" }, answer_by_ai: { type: "BOOLEAN" },
+  source: { type: "STRING" }, topic: { type: "STRING" }, marks: { type: "INTEGER" }, figure_box: { type: "ARRAY", items: { type: "INTEGER" } } },
+  required: ["type", "text"] } } }, required: ["questions"] };
+async function phLoadCfg() { if (phCfg) return phCfg; try { phCfg = (await api.getPrivate("gemini")) || {}; } catch (e) { phCfg = {}; } return phCfg; }
+function phShow() { const has = !!(phCfg && phCfg.key); $("phKeyBox").hidden = has; $("phMain").hidden = !has; if (!has) { $("phKey").value = ""; $("phModel").value = (phCfg && phCfg.model) || "gemini-2.5-flash"; } }
+$("phOpen").onclick = async () => { $("phModal").hidden = false; $("phMsg").textContent = "Loading…"; $("phKeyBox").hidden = true; $("phMain").hidden = true; await phLoadCfg(); $("phMsg").textContent = ""; phShow(); };
+$("phX").onclick = () => { $("phModal").hidden = true; };
+$("phKeyEdit").onclick = () => { $("phKeyBox").hidden = false; $("phMain").hidden = true; $("phKey").value = ""; $("phModel").value = phCfg.model || "gemini-2.5-flash"; };
+$("phKeySave").onclick = async () => {
+  const key = $("phKey").value.trim(), model = $("phModel").value.trim() || "gemini-2.5-flash";
+  if (!key && !(phCfg && phCfg.key)) { $("phMsg").textContent = "Paste the API key first."; return; }
+  $("phMsg").textContent = "Saving…";
+  try { phCfg = { key: key || phCfg.key, model }; await api.setPrivate("gemini", phCfg); $("phMsg").textContent = "Saved. Now choose photos."; phShow(); }
+  catch (e) { $("phMsg").textContent = "Could not save. Publish the new Firebase rules first (see the update steps)."; }
+};
+// photo -> JPEG (max 2000 px) for Gemini; keeps the canvas for cutting out diagrams
+function phPrepare(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => { const k = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement("canvas");
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); res({ canvas: c, b64: c.toDataURL("image/jpeg", 0.9).split(",")[1] }); };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("badimage")); }; img.src = url;
+  });
+}
+function phCrop(canvas, box) {
+  if (!Array.isArray(box) || box.length !== 4) return null;
+  let [y0, x0, y1, x1] = box.map(v => Math.max(0, Math.min(1000, +v || 0)));
+  if (y1 - y0 < 20 || x1 - x0 < 20) return null;
+  const W = canvas.width, H = canvas.height, pad = 0.015;
+  const sx = Math.max(0, (x0 / 1000 - pad) * W), sy = Math.max(0, (y0 / 1000 - pad) * H), ex = Math.min(W, (x1 / 1000 + pad) * W), ey = Math.min(H, (y1 / 1000 + pad) * H);
+  const k = Math.min(1, 900 / Math.max(ex - sx, ey - sy)), c = document.createElement("canvas"); c.width = Math.round((ex - sx) * k); c.height = Math.round((ey - sy) * k);
+  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(canvas, sx, sy, ex - sx, ey - sy, 0, 0, c.width, c.height);
+  return { src: c.toDataURL("image/jpeg", 0.88), ar: c.width / c.height };
+}
+async function phAsk(b64, solve) {
+  const prompt = PH_PROMPT.replace("SOLVE_RULE", solve ? "If the answer is not printed, solve the question carefully and give your answer with answer_by_ai = true." : "If it is not printed, leave answer empty.");
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(phCfg.model || "gemini-2.5-flash")}:generateContent?key=${encodeURIComponent(phCfg.key)}`;
+  const body = { contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: b64 } }] }],
+    generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: PH_SCHEMA } };
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const m = (j.error && j.error.message) || r.statusText; const e = new Error(m); e.status = r.status; throw e; }
+  const txt = (((j.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || "").join("") || "";
+  const data = JSON.parse(txt || "{}"); return Array.isArray(data.questions) ? data.questions : [];
+}
+// one Gemini question -> the same shape the Word review screen uses
+function phToReview(g, canvas, n) {
+  let type = PH_TYPES.includes(g.type) ? g.type : "VSA";
+  const opts = (g.options || []).map(o => String(o || "").replace(/^\s*\(?[a-dA-D1-4][).:]\s*/, "").trim()).filter(Boolean);
+  if (isMCQ(type) && opts.length < 2) type = "NUM";
+  let src = parseSources(g.source || ""); if (isMCQ(type)) type = src.some(x => /^(JEE|NEET)/.test(x.s)) ? "MCQJ" : type === "MCQJ" && !src.length ? "MCQJ" : type;
+  let ans = String(g.answer || "").trim(); const issues = [];
+  if (isMCQ(type) || type === "AR") { const l = ans.match(/^\(?([a-dA-D])\)?(\W|$)/); ans = l ? l[1].toLowerCase() : ""; if (!ans) issues.push("no answer found"); }
+  if (type === "TF") ans = tfAns(ans);
+  if (isMCQ(type)) { while (opts.length < 4) opts.push(""); if (opts.slice(0, 4).some(o => !o)) issues.push("fewer than 4 options"); }
+  if (ans && g.answer_by_ai) issues.push("answer worked out by AI – check it");
+  return { n, type, type0: type, text: String(g.text || "").trim(), opts: isMCQ(type) ? opts.slice(0, 4) : [], reason: String(g.reason || "").trim(), passage: String(g.passage || "").trim(),
+    ans, img: phCrop(canvas, g.figure_box), issues, use: !!String(g.text || "").trim(), src, marks: +g.marks || DEF_MARKS[type], topic: String(g.topic || "").trim() };
+}
+$("phFiles").addEventListener("change", async e => {
+  const files = [...(e.target.files || [])]; setTimeout(() => { e.target.value = ""; }, 0); if (!files.length) return;
+  const solve = $("phSuggest").checked, all = []; let fail = 0, lastErr = "";
+  for (let i = 0; i < files.length; i++) {
+    $("phMsg").textContent = `Reading photo ${i + 1} of ${files.length}…`;
+    try { const p = await phPrepare(files[i]); const qs = await phAsk(p.b64, solve); qs.forEach(g => all.push(phToReview(g, p.canvas, all.length + 1))); }
+    catch (err) { fail++; lastErr = err.status === 400 && /key/i.test(err.message) ? "The API key is not valid. Tap “Change API key”." : err.status === 429 ? "Gemini's free limit is used up for now. Try again later." : err.status === 404 ? "This Gemini model name is not available. Tap “Change API key / model”." : err.message === "badimage" ? "A photo could not be opened." : "Could not reach Gemini. Check your internet. (" + (err.message || "error") + ")"; }
+  }
+  if (!all.length) { $("phMsg").textContent = (fail ? lastErr : "No questions were found in the photo(s).") ; return; }
+  $("phMsg").textContent = fail ? `${fail} photo(s) could not be read. ${lastErr}` : "";
+  // hand over to the Word import review screen
+  const topic = (all.find(q => q.topic) || {}).topic || "";
+  wdData = { meta: { concept: topic }, qs: all };
+  $("phModal").hidden = true; $("wdTitle").textContent = "Import from photo";
+  $("wdModal").hidden = false; $("wdStart").hidden = true; $("wdReview").hidden = false; $("wdMsg").textContent = fail ? `${fail} photo(s) could not be read.` : "";
+  $("wdCls").value = String(nav.cls || 10); $("wdChapterNew").value = ""; $("wdConceptNew").value = "";
+  wdFill(0, { subject: nav.subject, chapter: nav.chapter || "", concept: topic }); wdRender();
+});
 
 // ================= Admin: bring old questions to the new types =================
 // 4-mark MCQ -> MCQ JEE/NEET, "Proof" tag -> Proof type, 2-mark Short Answer -> 2 Marker

@@ -195,7 +195,10 @@ async function firebaseApi() {
       const admins = new Set((await F.getDocs(F.collection(db, "admins"))).docs.map(d => d.id));
       return r.docs.map(d => { const x = d.data(); return { uid: d.id, email: x.email, name: x.name, createdAt: toMs(x.createdAt), planUntil: toMs(x.planUntil), admin: admins.has(d.id), referredBy: x.referredBy || null, referralRewarded: !!x.referralRewarded }; });
     },
-    setPlan(uid, ms) { return F.updateDoc(F.doc(db, "users", uid), { planUntil: ms == null ? null : F.Timestamp.fromMillis(ms) }); }
+    setPlan(uid, ms) { return F.updateDoc(F.doc(db, "users", uid), { planUntil: ms == null ? null : F.Timestamp.fromMillis(ms) }); },
+    // admin-only settings (e.g. the Gemini key for photo import): private/{name}, readable by admins only
+    async getPrivate(name) { const s = await F.getDoc(F.doc(db, "private", name)); return s.exists() ? s.data() : null; },
+    setPrivate(name, data) { return F.setDoc(F.doc(db, "private", name), data); }
   };
 }
 
@@ -287,7 +290,9 @@ function demoApi() {
     async syllabus() { return wait(get("syllabus", null)); },
     async saveSyllabus(s) { set("syllabus", s); },
     async users() { return wait(Object.entries(get("users", {})).map(([uid, x]) => ({ uid, email: x.email, name: x.name, createdAt: x.createdAt, planUntil: x.planUntil, admin: !!x.admin, referredBy: x.referredBy || null, referralRewarded: !!x.referralRewarded })).sort((a, b) => b.createdAt - a.createdAt)); },
-    async setPlan(uid, ms) { const us = get("users", {}); us[uid].planUntil = ms; set("users", us); }
+    async setPlan(uid, ms) { const us = get("users", {}); us[uid].planUntil = ms; set("users", us); },
+    async getPrivate(name) { return get("private_" + name, null); },
+    async setPrivate(name, data) { set("private_" + name, data); }
   };
 }
 
@@ -379,6 +384,8 @@ function localApi() {
     async sendFeedback() {}, async listFeedback() { return []; }, async deleteFeedback() {}, async rewardReferral() {},
     async users() { return []; },
     async setPlan() {},
+    getPrivate(name) { return kvGet("private_" + name); },
+    setPrivate(name, data) { return kvSet("private_" + name, data); },
     // ---- backup / restore ----
     async stats() {
       const qs = await all();

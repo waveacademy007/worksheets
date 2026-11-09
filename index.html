@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
-<link rel="stylesheet" href="app.css?v=3.2">
+<link rel="stylesheet" href="app.css?v=3.3">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js" defer></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -281,6 +281,7 @@
         <button class="btn" data-go="syl">Syllabus</button>
         <button class="btn" id="impOpen">Import from Excel</button>
         <button class="btn" id="wdOpen">Import from Word</button>
+        <button class="btn" id="phOpen">Import from photo</button>
         <a class="btn" href="Question_Bank_Template.xlsx" download>Excel template</a>
         <button class="btn" id="seedBtn">Load sample questions</button>
         <button class="btn" id="vsaBtn">Update old questions to new types</button>
@@ -372,9 +373,30 @@
 <div class="modal" id="imgModal" hidden role="dialog" aria-modal="true" aria-label="Diagram">
   <div class="mbox imgview"><div class="mhead"><h2>Diagram</h2><button class="btn" id="imgX" aria-label="Close">✕</button></div><img id="imgBig" alt="Diagram"></div>
 </div>
+<div class="modal" id="phModal" hidden role="dialog" aria-modal="true" aria-labelledby="phTitle">
+  <div class="mbox">
+    <div class="mhead"><h2 id="phTitle">Import from photo</h2><button class="btn" id="phX" aria-label="Close">✕</button></div>
+    <div id="phKeyBox" class="phbox" hidden>
+      <p class="note" style="margin:0"><b>One-time setup.</b> Open <b>aistudio.google.com</b> → sign in → <b>Get API key</b> → copy the key and paste it here. It is saved where only you (admin) can read it.</p>
+      <label class="f">Gemini API key<input type="password" id="phKey" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label class="f">Model<input type="text" id="phModel" value="gemini-2.5-flash" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <div class="bar" style="margin:0"><span class="grow"></span><button class="btn primary" id="phKeySave">Save key</button></div>
+    </div>
+    <div id="phMain" class="phbox" hidden>
+      <div class="drop">
+        <span class="btn primary filebtn">Choose photos<input type="file" id="phFiles" multiple accept="image/*" aria-label="Choose photos of questions"></span>
+        <p class="note">Book pages, question papers or screenshots. Clear, straight photos work best. You can choose several at once.</p>
+      </div>
+      <label class="check"><input type="checkbox" id="phSuggest"> Let AI work out missing answers (you must check them)</label>
+      <div class="bar" style="margin:0"><button class="link" id="phKeyEdit">Change API key / model</button></div>
+    </div>
+    <p class="note" id="phMsg" role="status"></p>
+  </div>
+</div>
 <div class="modal" id="eqModal" hidden role="dialog" aria-modal="true" aria-labelledby="eqTitle">
   <div class="mbox wide eqbox">
     <div class="mhead"><h2 id="eqTitle">Equation</h2><button class="btn" id="eqX" aria-label="Close">✕</button></div>
+    <div class="eqq"><p class="lbl">Question preview</p><div id="eqQPrev"></div></div>
     <div class="eqprev" id="eqPrev" aria-live="polite"></div>
     <div class="eqtabs" id="eqTabs" role="tablist"></div>
     <div class="eqpal" id="eqPal"></div>
@@ -512,6 +534,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
-<script type="module" src="app.js?v=3.2"></script>
+<script type="module" src="app.js?v=3.3"></script>
 </body>
 </html>
