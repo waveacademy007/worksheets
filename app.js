@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=3.3";
+import { createApi, DEMO } from "./api.js?v=3.4";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.3";
-import { SAMPLE } from "./sample-questions.js?v=3.3";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.3";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.4";
+import { SAMPLE } from "./sample-questions.js?v=3.4";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.4";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "3.3";
+const APP_VERSION = "3.4";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -1840,15 +1840,15 @@ const PH_SCHEMA = { type: "OBJECT", properties: { questions: { type: "ARRAY", it
   required: ["type", "text"] } } }, required: ["questions"] };
 async function phLoadCfg() { if (phCfg) return phCfg; try { phCfg = (await api.getPrivate("gemini")) || {}; } catch (e) { phCfg = {}; } return phCfg; }
 function phShow() { const has = !!(phCfg && phCfg.key); $("phKeyBox").hidden = has; $("phMain").hidden = !has; if (!has) { $("phKey").value = ""; $("phModel").value = (phCfg && phCfg.model) || "gemini-2.5-flash"; } }
-$("phOpen").onclick = async () => { $("phModal").hidden = false; $("phMsg").textContent = "Loading…"; $("phKeyBox").hidden = true; $("phMain").hidden = true; await phLoadCfg(); $("phMsg").textContent = ""; phShow(); };
+$("phOpen").onclick = async () => { $("phModal").hidden = false; $("phStat").textContent = "Loading…"; $("phKeyBox").hidden = true; $("phMain").hidden = true; await phLoadCfg(); $("phStat").textContent = ""; phShow(); };
 $("phX").onclick = () => { $("phModal").hidden = true; };
 $("phKeyEdit").onclick = () => { $("phKeyBox").hidden = false; $("phMain").hidden = true; $("phKey").value = ""; $("phModel").value = phCfg.model || "gemini-2.5-flash"; };
 $("phKeySave").onclick = async () => {
   const key = $("phKey").value.trim(), model = $("phModel").value.trim() || "gemini-2.5-flash";
-  if (!key && !(phCfg && phCfg.key)) { $("phMsg").textContent = "Paste the API key first."; return; }
-  $("phMsg").textContent = "Saving…";
-  try { phCfg = { key: key || phCfg.key, model }; await api.setPrivate("gemini", phCfg); $("phMsg").textContent = "Saved. Now choose photos."; phShow(); }
-  catch (e) { $("phMsg").textContent = "Could not save. Publish the new Firebase rules first (see the update steps)."; }
+  if (!key && !(phCfg && phCfg.key)) { $("phStat").textContent = "Paste the API key first."; return; }
+  $("phStat").textContent = "Saving…";
+  try { phCfg = { key: key || phCfg.key, model }; await api.setPrivate("gemini", phCfg); $("phStat").textContent = "Saved. Now choose photos."; phShow(); }
+  catch (e) { $("phStat").textContent = "Could not save. Publish the new Firebase rules first (see the update steps)."; }
 };
 // photo -> JPEG (max 2000 px) for Gemini; keeps the canvas for cutting out diagrams
 function phPrepare(file) {
@@ -1898,13 +1898,15 @@ function phToReview(g, canvas, n) {
 $("phFiles").addEventListener("change", async e => {
   const files = [...(e.target.files || [])]; setTimeout(() => { e.target.value = ""; }, 0); if (!files.length) return;
   const solve = $("phSuggest").checked, all = []; let fail = 0, lastErr = "";
+  const btn = e.target.closest(".filebtn"); btn && btn.classList.add("busy"); e.target.disabled = true;
   for (let i = 0; i < files.length; i++) {
-    $("phMsg").textContent = `Reading photo ${i + 1} of ${files.length}…`;
+    $("phStat").textContent = `Reading photo ${i + 1} of ${files.length}… (this can take up to a minute)`;
     try { const p = await phPrepare(files[i]); const qs = await phAsk(p.b64, solve); qs.forEach(g => all.push(phToReview(g, p.canvas, all.length + 1))); }
     catch (err) { fail++; lastErr = err.status === 400 && /key/i.test(err.message) ? "The API key is not valid. Tap “Change API key”." : err.status === 429 ? "Gemini's free limit is used up for now. Try again later." : err.status === 404 ? "This Gemini model name is not available. Tap “Change API key / model”." : err.message === "badimage" ? "A photo could not be opened." : "Could not reach Gemini. Check your internet. (" + (err.message || "error") + ")"; }
   }
-  if (!all.length) { $("phMsg").textContent = (fail ? lastErr : "No questions were found in the photo(s).") ; return; }
-  $("phMsg").textContent = fail ? `${fail} photo(s) could not be read. ${lastErr}` : "";
+  btn && btn.classList.remove("busy"); e.target.disabled = false;
+  if (!all.length) { $("phStat").textContent = (fail ? lastErr : "No questions were found in the photo(s).") ; return; }
+  $("phStat").textContent = fail ? `${fail} photo(s) could not be read. ${lastErr}` : "";
   // hand over to the Word import review screen
   const topic = (all.find(q => q.topic) || {}).topic || "";
   wdData = { meta: { concept: topic }, qs: all };
