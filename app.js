@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=3.9";
+import { createApi, DEMO } from "./api.js?v=4.0";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.9";
-import { SAMPLE } from "./sample-questions.js?v=3.9";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.9";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.0";
+import { SAMPLE } from "./sample-questions.js?v=4.0";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.0";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "3.9";
+const APP_VERSION = "4.0";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -2064,23 +2064,77 @@ function splitQOpts(raw) {
   if (opts.some(o => !o)) return null;
   return { q, opts };
 }
+// Pull answer / source / solution lines out of a pasted question, guess the type, then split the options.
+const SRC_START = /^[\[(]?\s*(jee|neet|aipmt|aieee|cbse|ncert|exemplar|iit[\s-]*jee|board\s+exam|sample\s+paper)\b/i;
+function parsePasted(raw) {
+  const lines = String(raw || "").replace(/\r/g, "").split("\n");
+  let ans = "", sol = [], src = [], inSol = false;
+  const keep = [];
+  for (const ln of lines) {
+    const t = ln.trim();
+    const am = t.match(/^(?:ans(?:wer)?|correct\s+(?:option|answer)|key)\s*(?:[.:\-–=)]+\s*|(?=\())(.*)$/i);
+    if (am && !ans) { ans = am[1].trim(); inSol = false; continue; }
+    if (/^(?:sol(?:ution)?|explanation|hint)\b\s*[.:\-–)]/i.test(t)) { inSol = true; const r = t.replace(/^(?:sol(?:ution)?|explanation|hint)\b\s*[.:\-–)]*\s*/i, ""); if (r) sol.push(r); continue; }
+    if (t && t.length <= 70 && SRC_START.test(t)) { const p = parseSources(t.replace(/[\[\]]/g, "")); if (p.length) { src.push(...p); continue; } }
+    if (inSol) { if (t) sol.push(t); continue; }
+    keep.push(ln);
+  }
+  let text = keep.join("\n").trim().replace(/^(?:Q(?:ues(?:tion)?)?\s*\.?\s*)?\d{1,3}\s*[.):\-–]\s*/i, "");
+  // "(JEE Main 2023)" or "[NEET 2019]" at the end of the question or of the last option
+  const tail = str => { const m = str.match(/\s*[\[(]\s*((?:jee|neet|aipmt|aieee|cbse|ncert|exemplar)[^\[\]]*?)\s*[\])]\s*$/i); if (m) { const p = parseSources(m[1]); if (p.length) { src.push(...p); return str.slice(0, m.index).trimEnd(); } } return str; };
+  text = tail(text);
+  let type = "", reason = "", opts = null;
+  const ar = text.match(/^\s*assertion\s*(?:\(A\))?\s*[:\-–]\s*([\s\S]*?)\n?\s*reason\s*(?:\(R\))?\s*[:\-–]\s*([\s\S]*)$/i);
+  if (ar) { type = "AR"; text = ar[1].trim(); reason = ar[2].trim(); const r2 = splitQOpts("x " + reason); if (r2) reason = r2.q.replace(/^x\s*/, ""); reason = tail(reason); }
+  else {
+    const r = splitQOpts(text);
+    if (r) { text = tail(r.q); opts = r.opts.map(o => o); opts[opts.length - 1] = tail(opts[opts.length - 1]); type = "MCQ"; }
+    else if (/\btrue\s*(or|\/)\s*false\b/i.test(text)) { type = "TF"; text = text.replace(/\s*\(\s*true\s*\/\s*false\s*\)\s*$/i, "").replace(/^\s*state\s+(whether\s+)?(the following (statement )?is\s+)?true\s*(or|\/)\s*false\s*[:.\-–]?\s*/i, ""); }
+    else if (/_{3,}|\.{6,}|…{2,}/.test(text)) type = /^-?\d+(\.\d+)?$/.test(ans) || /nearest integer|numerical value|integer value/i.test(text) ? "NUM" : "FB";
+    else if (/nearest integer|numerical value|integer value/i.test(text)) type = "NUM";
+    else if (/^\s*give\s+reasons?\b/i.test(text)) type = "GR";
+    else if (/\b(prove|show)\s+that\b/i.test(text)) type = "PR";
+  }
+  if (type === "MCQ" && src.some(x => /^(JEE|NEET)/.test(x.s))) type = "MCQJ";
+  return { text, opts, ans, src, sol: sol.join("\n"), type, reason };
+}
 let pasteUndo = null;
 $("aText").addEventListener("paste", e => {
-  const t0 = $("aType").value; if (t0 === "AR" || t0 === "CS") return;
-  const before = { text: $("aText").value, opts: [0, 1, 2, 3].map(i => $("aO" + i).value), type: t0, marks: $("aMarks").value, ans: $("aAns").value };
+  if ($("aType").value === "CS") return;
+  const before = { text: $("aText").value, opts: [0, 1, 2, 3].map(i => $("aO" + i).value), type: $("aType").value, marks: $("aMarks").value, ans: $("aAns").value,
+    reason: $("aReason").value, src: readSrcRows(), exam: getEx("aExam") };
   setTimeout(() => {                                  // after the paste (and the Word-equation paste) has landed
-    const raw = $("aText").value, r = splitQOpts(raw); if (!r) return;
+    const raw = $("aText").value, r = parsePasted(raw);
+    const changed = r.opts || r.ans || r.src.length || r.sol || r.type || r.text !== raw.trim();
+    if (!changed) return;
     pasteUndo = { ...before, text: raw };            // Undo gives back the text exactly as pasted
-    $("aText").value = r.q;
-    if (!isMCQ($("aType").value)) { $("aType").value = "MCQ"; addTypeUI(); }
-    [0, 1, 2, 3].forEach(i => { $("aO" + i).value = r.opts[i] || ""; });
-    $("aAns").value = ""; ansPickUI();
-    $("aPasteNote").querySelector("span").textContent = `${r.opts.length} options filled from paste` + (r.opts.length < 4 ? " – fill the rest" : "");
+    const done = [];
+    let t = $("aType").value;
+    if (r.type && !(r.type === "MCQ" && isMCQ(t))) t = r.type;
+    if (r.type === "MCQJ") t = "MCQJ";
+    // a written question (it has a solution or a worded answer) pasted while an objective type is chosen -> 2 Marker
+    if (!r.type && KEY_TABLE.has(t) && (r.sol || (r.ans && !/^\(?\s*[a-dA-D1-4]\s*\)?$/.test(r.ans) && !/^-?\d/.test(r.ans) && !/^(t|f|true|false)$/i.test(r.ans)))) t = "VSA";
+    if (t !== $("aType").value) { $("aType").value = t; addTypeUI(); done.push(TYPES[t] || t); }
+    $("aText").value = r.text;
+    if (r.opts) { [0, 1, 2, 3].forEach(i => { $("aO" + i).value = r.opts[i] || ""; }); done.push(`${r.opts.length} options`); }
+    if (t === "AR" && r.reason) { $("aReason").value = r.reason; done.push("reason"); }
+    // answer
+    let a = "";
+    if (isMCQ(t) || t === "AR") { const m = r.ans.match(/^\(?\s*([a-dA-D1-4])\s*\)?(?:\W|$)/); if (m) a = /\d/.test(m[1]) ? "abcd"[+m[1] - 1] : m[1].toLowerCase(); if (a) done.push(`answer (${a})`); }
+    else if (t === "TF") { a = tfAns(r.ans); if (a) done.push("answer " + a); }
+    else { a = r.ans; if (!KEY_TABLE.has(t) && r.sol) a = ((a ? a + " " : "") + r.sol).replace(/\s*\n\s*/g, " "); if (a) done.push(r.sol && !KEY_TABLE.has(t) ? "answer + solution" : "answer"); }
+    $("aAns").value = a; ansPickUI();
+    // sources: added to the ones already there; JEE / NEET also ticked in Exams
+    if (r.src.length) { const have = readSrcRows(); for (const x of r.src) if (!have.some(h => h.s === x.s && h.y === x.y)) { srcRow(x.s, x.y); have.push(x); }
+      const cur = getEx("aExam"), onlyDefault = cur.length === 1 && cur[0] === "CBSE" && r.src.some(x => /^(JEE|NEET)/.test(x.s)) && !r.src.some(x => /CBSE|NCERT/.test(x.s));
+      setEx("aExam", normExam([...(onlyDefault ? [] : cur), ...r.src.map(x => x.s)], r.src)); done.push("source " + r.src.map(x => (x.s + " " + x.y).trim()).join(", ")); }
+    $("aPasteNote").querySelector("span").textContent = (done.length ? done.join(" · ") : "Cleaned up") + " – filled from paste" + (r.opts && r.opts.length < 4 ? " (fill the rest of the options)" : "");
     $("aPasteNote").hidden = false; clearTimeout(pasteUndo.t); pasteUndo.t = setTimeout(() => { $("aPasteNote").hidden = true; }, 20000);
   }, 0);
 });
 $("aPasteUndo").onclick = () => { const u = pasteUndo; if (!u) return;
-  $("aType").value = u.type; addTypeUI(); $("aMarks").value = u.marks; $("aText").value = u.text; u.opts.forEach((o, i) => { $("aO" + i).value = o; }); $("aAns").value = u.ans; ansPickUI();
+  $("aType").value = u.type; addTypeUI(); $("aMarks").value = u.marks; $("aText").value = u.text; u.opts.forEach((o, i) => { $("aO" + i).value = o; });
+  $("aAns").value = u.ans; $("aReason").value = u.reason; $("aSrcRows").innerHTML = ""; u.src.forEach(x => srcRow(x.s, x.y)); setEx("aExam", u.exam); ansPickUI();
   $("aPasteNote").hidden = true; pasteUndo = null; };
 
 // ================= Import from photo (admin): Gemini reads the photo =================
