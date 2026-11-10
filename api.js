@@ -18,6 +18,11 @@ export async function createApi() { return MODE === "offline" ? localApi() : DEM
 const clean = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== ""));
 const key = (cls, subject) => cls + "|" + subject;
 const match = (q, f) => !f || Object.entries(f).every(([k, v]) => q[k] === v);
+// Option pictures live next to the diagram as images "<id>_o0" … "<id>_o3"; q.oimg = [aspect ratio or 0] × 4.
+// While saving, q.oimgs carries them: data URL = new picture, "keep" = unchanged, null = none.
+const OK = id => [0, 1, 2, 3].map(k => id + "_o" + k);
+const oIds = q => (q && Array.isArray(q.oimg) ? q.oimg.map((a, k) => a ? q.id + "_o" + k : null).filter(Boolean) : []);
+const isData = v => typeof v === "string" && v.startsWith("data:");
 
 async function firebaseApi() {
   const base = "https://www.gstatic.com/firebasejs/10.12.2/";
@@ -111,10 +116,11 @@ async function firebaseApi() {
       const flush = async () => { if (ops) { await batch.commit(); batch = F.writeBatch(db); ops = 0; bytes = 0; } };
       for (const q of list) {
         const ref = F.doc(F.collection(db, "questions"));
-        const { img, id, ...rest } = q;
+        const { img, oimgs, id, ...rest } = q;
         batch.set(ref, { ...clean(rest), hasImg: !!img, createdAt: F.serverTimestamp() });
         ops++;
         if (img) { batch.set(F.doc(db, "qimages", ref.id), { data: img }); ops++; bytes += img.length; }
+        (oimgs || []).forEach((d, k) => { if (isData(d)) { batch.set(F.doc(db, "qimages", ref.id + "_o" + k), { data: d }); ops++; bytes += d.length; } });
         (chaps[key(q.cls, q.subject)] ??= new Set()).add(q.chapter);
         done++;
         if (ops >= 400 || bytes > 6e6) { await flush(); onProgress && onProgress(done, list.length); }
@@ -129,6 +135,7 @@ async function firebaseApi() {
       const b = F.writeBatch(db);
       b.delete(F.doc(db, "questions", q.id));
       if (q.hasImg) b.delete(F.doc(db, "qimages", q.id));
+      oIds(q).forEach(x => b.delete(F.doc(db, "qimages", x)));
       await b.commit();
     },
     // Delete questions (+ their diagrams) in batches. filter = {cls, subject, chapter?, concept?} or null for ALL.
@@ -138,7 +145,7 @@ async function firebaseApi() {
         const r = await F.getDocs(F.query(qWhere(filter), F.limit(200)));
         if (r.empty) break;
         const b = F.writeBatch(db);
-        r.docs.forEach(d => { b.delete(d.ref); if (d.data().hasImg) b.delete(F.doc(db, "qimages", d.id)); });
+        r.docs.forEach(d => { b.delete(d.ref); if (d.data().hasImg) b.delete(F.doc(db, "qimages", d.id)); oIds({ ...d.data(), id: d.id }).forEach(x => b.delete(F.doc(db, "qimages", x))); });
         await b.commit();
         total += r.size; onProgress && onProgress(total);
       }
@@ -158,6 +165,7 @@ async function firebaseApi() {
       if (!snap.exists()) throw new Error("gone");
       const old = snap.data();
       const hasImg = img === "remove" ? false : img === "keep" ? !!old.hasImg : true;
+      const { oimgs, ...q0 } = q; q = q0;
       const data = { ...clean(q), hasImg, updatedAt: F.serverTimestamp() };
       for (const k of Object.keys(old)) if (!(k in data) && !["createdAt", "seq"].includes(k)) data[k] = F.deleteField();
       if (!hasImg) { data.imgAR = F.deleteField(); data.imgW = F.deleteField(); }
@@ -165,6 +173,7 @@ async function firebaseApi() {
       b.set(ref, data, { merge: true });
       if (img === "remove") b.delete(F.doc(db, "qimages", id));
       else if (img !== "keep") b.set(F.doc(db, "qimages", id), { data: img });
+      if (oimgs) OK(id).forEach((x, k) => { if (isData(oimgs[k])) b.set(F.doc(db, "qimages", x), { data: oimgs[k] }); else if (!oimgs[k] && old.oimg && old.oimg[k]) b.delete(F.doc(db, "qimages", x)); });
       await b.commit();
       if (old.cls !== q.cls || old.subject !== q.subject || old.chapter !== q.chapter) {
         await F.setDoc(F.doc(db, "meta", "chapters"), { c: { [key(q.cls, q.subject)]: F.arrayUnion(q.chapter) } }, { merge: true });
@@ -266,18 +275,19 @@ function demoApi() {
       const qs = get("questions", []), imgs = get("images", {}), ch = get("chapters", {});
       list.forEach((q, i) => {
         const id = "q" + Date.now().toString(36) + i;
-        const { img, ...rest } = q;
+        const { img, oimgs, ...rest } = q;
         qs.push({ ...clean(rest), id, hasImg: !!img });
         if (img) imgs[id] = img;
+        (oimgs || []).forEach((d, k) => { if (isData(d)) imgs[id + "_o" + k] = d; });
         const k = key(q.cls, q.subject); ch[k] = [...new Set([...(ch[k] || []), q.chapter])];
       });
       set("questions", qs); set("images", imgs); set("chapters", ch);
       return wait(list.length);
     },
-    async deleteQuestion(q) { set("questions", get("questions", []).filter(x => x.id !== q.id)); const im = get("images", {}); delete im[q.id]; set("images", im); },
+    async deleteQuestion(q) { set("questions", get("questions", []).filter(x => x.id !== q.id)); const im = get("images", {}); delete im[q.id]; OK(q.id).forEach(x => delete im[x]); set("images", im); },
     async deleteQuestions(f) {
       const qs = get("questions", []), im = get("images", {}), ch = get("chapters", {});
-      const gone = qs.filter(q => match(q, f)); gone.forEach(q => delete im[q.id]);
+      const gone = qs.filter(q => match(q, f)); gone.forEach(q => { delete im[q.id]; OK(q.id).forEach(x => delete im[x]); });
       set("questions", qs.filter(q => !match(q, f))); set("images", im);
       if (!f) set("chapters", {});
       else if (!f.concept) { const k = key(f.cls, f.subject); if (f.chapter) ch[k] = (ch[k] || []).filter(c => c !== f.chapter); else delete ch[k]; set("chapters", ch); }
@@ -287,8 +297,10 @@ function demoApi() {
       const qs = get("questions", []), im = get("images", {}), ch = get("chapters", {});
       const i = qs.findIndex(x => x.id === id); if (i < 0) throw new Error("gone");
       const old = qs[i], hasImg = img === "remove" ? false : img === "keep" ? !!old.hasImg : true;
+      const { oimgs, ...q0 } = q; q = q0;
       const doc = { ...clean(q), id, hasImg }; if (!hasImg) { delete doc.imgAR; delete doc.imgW; }
       qs[i] = doc; if (img === "remove") delete im[id]; else if (img !== "keep") im[id] = img;
+      if (oimgs) OK(id).forEach((x, k) => { if (isData(oimgs[k])) im[x] = oimgs[k]; else if (!oimgs[k]) delete im[x]; });
       const k = key(q.cls, q.subject); ch[k] = [...new Set([...(ch[k] || []), q.chapter])];
       const ok = key(old.cls, old.subject);
       if (!qs.some(x => x.cls === old.cls && x.subject === old.subject && x.chapter === old.chapter)) ch[ok] = (ch[ok] || []).filter(c => c !== old.chapter);
@@ -356,30 +368,32 @@ function localApi() {
       await tx(["questions", "images"], "readwrite", (qs, im) => {
         list.forEach((q, i) => {
           const id = q.id && !/^[iwcs]?\d/.test(q.id) && q.keepId ? q.id : "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + i;
-          const { img, keepId, ...rest } = q;
+          const { img, oimgs, keepId, ...rest } = q;
           const doc = { ...clean(rest), id, hasImg: !!img };
-          qs.put(doc); if (img) im.put(img, id); added.push(doc);
+          qs.put(doc); if (img) im.put(img, id); (oimgs || []).forEach((d, k) => { if (isData(d)) im.put(d, id + "_o" + k); }); added.push(doc);
         });
       });
       (await all()).push(...added); await touch();
       return added.length;
     },
     async deleteQuestion(q) {
-      await tx(["questions", "images"], "readwrite", (qs, im) => { qs.delete(q.id); im.delete(q.id); });
+      await tx(["questions", "images"], "readwrite", (qs, im) => { qs.delete(q.id); im.delete(q.id); OK(q.id).forEach(x => im.delete(x)); });
       cache = (await all()).filter(x => x.id !== q.id); await touch();
     },
     async deleteQuestions(f) {
       const qs = await all();
       const gone = qs.filter(q => match(q, f));
-      await tx(["questions", "images"], "readwrite", (s, im) => { gone.forEach(q => { s.delete(q.id); im.delete(q.id); }); });
+      await tx(["questions", "images"], "readwrite", (s, im) => { gone.forEach(q => { s.delete(q.id); im.delete(q.id); OK(q.id).forEach(x => im.delete(x)); }); });
       cache = qs.filter(q => !match(q, f)); await touch();
       return gone.length;
     },
     async updateQuestion(id, q, img) {
       const qs = await all(), old = qs.find(x => x.id === id); if (!old) throw new Error("gone");
       const hasImg = img === "remove" ? false : img === "keep" ? !!old.hasImg : true;
+      const { oimgs, ...q0 } = q; q = q0;
       const doc = { ...clean(q), id, hasImg }; if (!hasImg) { delete doc.imgAR; delete doc.imgW; }
-      await tx(["questions", "images"], "readwrite", (s, im) => { s.put(doc); if (img === "remove") im.delete(id); else if (img !== "keep") im.put(img, id); });
+      await tx(["questions", "images"], "readwrite", (s, im) => { s.put(doc); if (img === "remove") im.delete(id); else if (img !== "keep") im.put(img, id);
+        if (oimgs) OK(id).forEach((x, k) => { if (isData(oimgs[k])) im.put(oimgs[k], x); else if (!oimgs[k]) im.delete(x); }); });
       qs[qs.indexOf(old)] = doc; await touch(); return doc;
     },
     async countQuestions(f) { return (await all()).filter(q => match(q, f)).length; },
@@ -413,9 +427,9 @@ function localApi() {
     },
     async exportAll() {
       const qs = await all();
-      const imgs = await this.images(qs.filter(q => q.hasImg).map(q => q.id));
+      const imgs = await this.images([...qs.filter(q => q.hasImg).map(q => q.id), ...qs.flatMap(oIds)]);
       return { app: "wave-worksheets", version: 1, exportedAt: new Date().toISOString(), branding: (await kvGet("branding")) || {},
-        questions: qs.map(q => imgs[q.id] ? { ...q, img: imgs[q.id] } : q) };
+        questions: qs.map(q => { const o = { ...q }; if (imgs[q.id]) o.img = imgs[q.id]; if (oIds(q).length) o.oimgs = OK(q.id).map(x => imgs[x] || null); return o; }) };
     },
     markBackedUp() { return kvSet("lastBackup", Date.now()); },
     // Restore: questions with the same id are replaced, others are added. Settings are restored too.
@@ -424,8 +438,9 @@ function localApi() {
       await tx(["questions", "images"], "readwrite", (qs, im) => {
         for (const q of data.questions) {
           if (!q || !q.id || !q.text) continue;
-          const { img, ...rest } = q;
+          const { img, oimgs, ...rest } = q;
           qs.put({ ...rest, hasImg: !!img }); if (img) im.put(img, q.id); else im.delete(q.id);
+          OK(q.id).forEach((x, k) => { if (oimgs && isData(oimgs[k])) im.put(oimgs[k], x); else im.delete(x); });
         }
       });
       if (data.branding && Object.keys(data.branding).length) await kvSet("branding", data.branding);

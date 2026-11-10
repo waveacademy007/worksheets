@@ -1,5 +1,5 @@
 // Sample questions the admin can load with one click (Admin > Load sample questions)
-import { AR_OPTS } from "./constants.js?v=3.8";
+import { AR_OPTS } from "./constants.js?v=3.9";
 const H=(c,ch,t,o,a,ex)=>({exam:ex||["CBSE","NEET"],cls:10,subject:"Biology",chapter:"Life Processes",concept:"Human Heart",type:"MCQ",text:t,opts:o,ans:a,marks:1,src:[{s:"NCERT",y:""}]});
 export const SAMPLE=[
 H(0,0,"From the perspective of mechanics, the human heart operates essentially as which type of device?",["A heat engine","A lever of the third class","An electric generator","A hydraulic force pump"],"d"),

@@ -607,3 +607,21 @@ input[type=range]{width:100%;accent-color:var(--accent);padding:0;border:0;backg
 .dopts li.ok{font-weight:700;color:#15803d}
 .dans{font-size:.88rem;color:var(--muted)}
 .dimg{max-height:110px;max-width:220px;border:1px solid var(--line);border-radius:8px;background:#fff;justify-self:start}
+/* option pictures */
+.ocell{display:grid;gap:4px;align-content:start}
+.obar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.btn.sm{padding:4px 10px;min-height:0;font-size:.8rem;border-radius:9px}
+.othumb{max-height:44px;max-width:90px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.osize{grid-column:1/-1}
+.apimg{display:block;max-height:54px;max-width:100%;margin-top:3px;border-radius:5px;background:#fff}
+.ws-q .ogi{display:grid;column-gap:10px;row-gap:3px;margin-top:2px}
+.ws-q .ogi.c2,.pgrid .ogi.c2{grid-template-columns:1fr 1fr}
+.ws-q .ogi.c4,.pgrid .ogi.c4{grid-template-columns:repeat(4,1fr)}
+.ws-q .oi,.pgrid .oi{display:grid;grid-template-columns:22px 1fr;align-items:start;min-width:0}
+.ws-q .ob img,.pgrid .ob img{display:block;margin-top:2px;max-width:100%;height:auto;background:#fff}
+.oimiss{background:repeating-linear-gradient(45deg,#eee,#eee 4px,#f8f8f8 4px,#f8f8f8 8px);margin-top:2px}
+.pgrid{text-align:left}
+.pgrid .ogi{display:grid;column-gap:.25in;row-gap:.08in}
+.pgrid .oi{grid-template-columns:1.5em 1fr;column-gap:.2em}
+.pgrid .oi .l{width:auto}
+.wothumb{max-height:36px;max-width:70px;vertical-align:middle;margin-left:4px;border:1px solid var(--line);border-radius:4px;background:#fff}

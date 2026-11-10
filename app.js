@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=3.8";
+import { createApi, DEMO } from "./api.js?v=3.9";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.8";
-import { SAMPLE } from "./sample-questions.js?v=3.8";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.8";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=3.9";
+import { SAMPLE } from "./sample-questions.js?v=3.9";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=3.9";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "3.8";
+const APP_VERSION = "3.9";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -501,7 +501,7 @@ function renderList() {
   $("shownInfo").textContent = `${list.length} of ${total} questions`;
   $("qlist").innerHTML = list.length ? list.map(q => `<label class="q ${picked.has(q.id) ? "on" : ""}" data-id="${esc(q.id)}">
     <input type="checkbox" ${picked.has(q.id) ? "checked" : ""} aria-label="Use this question">
-    <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span>${q.concept && !fConcept ? `<span class="chip conchip">${esc(q.concept)}</span>` : ""}<span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.proof && q.type !== "PR" ? `<span class="chip proofchip">Proof</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}</div>
+    <div class="txt"><div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span>${q.concept && !fConcept ? `<span class="chip conchip">${esc(q.concept)}</span>` : ""}<span class="chip">${esc((q.exam || []).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.proof && q.type !== "PR" ? `<span class="chip proofchip">Proof</span>` : ""}${q.hasImg ? `<span class="chip imgchip">Diagram</span>` : ""}${hasOImg(q) ? `<span class="chip imgchip">Option pictures</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}</div>
     ${q.case ? `<div class="opts">${mt(q.case)}</div>` : ""}<div>${mt(q.text).replace(/\n/g, "<br>")}</div>
     ${q.type === "AR" ? `<div class="opts">R: ${mt(q.reason)}</div>` : ""}${q.type === "TF" ? `<div class="opts">(True / False)</div>` : ""}
     ${q.hasImg ? `<img class="qthumb${imgCache[q.id] ? "" : " loading"}" data-qimg="${esc(q.id)}" alt="Diagram, tap to enlarge"${imgCache[q.id] ? ` src="${imgCache[q.id]}"` : ""}>` : ""}
@@ -624,13 +624,13 @@ const DUP_MIN = 0.65, DUP_SAME = 0.9;
 function dupDialog(nq, matches, step) {
   return new Promise(async res => {
     const cards = [{ q: nq, isNew: true }, ...matches.map(m => ({ q: m.q, score: m.score }))];
-    const need = matches.filter(m => m.q.hasImg && !imgCache[m.q.id]).map(m => m.q.id);
+    const need = matches.flatMap(m => [...(m.q.hasImg ? [m.q.id] : []), ...oIdsOf(m.q)]).filter(id => !imgCache[id]);
     if (need.length) { try { Object.assign(imgCache, await api.images(need)); } catch (e) {} }
     $("dupTitle").textContent = (matches.some(m => m.score >= DUP_SAME) ? "Same question already in the bank" : "Similar question found") + (step ? ` (${step})` : "");
     $("dupMsg").textContent = "";
     $("dupList").innerHTML = cards.map((c, i) => { const q = c.q, img = c.isNew ? q.img : imgCache[q.id];
       const tag = c.isNew ? `<span class="dtag new">${nq._editing ? "Your edited question" : "New question"}</span>` : `<span class="dtag ${c.score >= DUP_SAME ? "same" : "sim"}">In bank · ${Math.round(c.score * 100)}% ${c.score >= DUP_SAME ? "same" : "similar"}</span>`;
-      const opts = isMCQ(q.type) ? `<ol class="dopts" type="a">${(q.opts || []).map((o, k) => `<li${String(q.ans || "").toLowerCase() === "abcd"[k] ? ' class="ok"' : ""}>${mt(o)}</li>`).join("")}</ol>` : "";
+      const opts = isMCQ(q.type) ? `<ol class="dopts" type="a">${(q.opts || []).map((o, k) => `<li${String(q.ans || "").toLowerCase() === "abcd"[k] ? ' class="ok"' : ""}>${mt(o)}${hasOImg(q) && oSrc(q, k) ? `<img class="wothumb" src="${oSrc(q, k)}" alt="">` : ""}</li>`).join("")}</ol>` : "";
       return `<div class="dupc${c.isNew ? " isnew" : ""}" data-i="${i}">
         <div class="dtop"><label class="dkeep"><input type="checkbox" checked data-k="${i}"><span>Keep</span></label>${tag}<label class="dword"><input type="radio" name="dupWord" value="${i}"><span>Use this wording</span></label></div>
         <div class="chips"><span class="chip t">${TYPES[q.type] || esc(q.type)}</span><span class="chip">${esc(normExam(q.exam, q.src).join(" · "))}</span>${q.marks ? `<span class="chip">${esc(q.marks)} mark${q.marks == 1 ? "" : "s"}</span>` : ""}${q.src && q.src.length ? `<span class="chip srcchip">${esc(srcText(q))}</span>` : ""}${q.concept ? `<span class="chip conchip">${esc(q.concept)}</span>` : ""}</div>
@@ -690,8 +690,21 @@ async function applyDedupe(d) {
   return { deleted: d.del.size, merged: d.upd.size };
 }
 const dedupeNote = (r, saved) => [saved ? `${saved} saved` : "", r.merged ? `${r.merged} merged into old` : "", r.deleted ? `${r.deleted} old deleted` : ""].filter(Boolean).join(" · ");
+// option pictures: q.oimg = [aspect ratio or 0] × 4, pictures in imgCache["<id>_o<k>"] (or q.oimgs while not saved yet)
+const hasOImg = q => isMCQ(q.type) && Array.isArray(q.oimg) && q.oimg.some(Boolean);
+const oSrc = (q, k) => (q.oimgs && typeof q.oimgs[k] === "string" && q.oimgs[k].startsWith("data:")) ? q.oimgs[k] : imgCache[q.id + "_o" + k] || null;
+const oIdsOf = q => hasOImg(q) ? q.oimg.map((a, k) => a ? q.id + "_o" + k : null).filter(Boolean) : [];
+// 4 in a row when the pictures are small and the option texts short, else 2 × 2
+function oLayout(q, list) { const W = q.oimgW || 60, short = list.every(o => !o || textW(plain(o)) <= 50); const per = W <= 45 && short ? 4 : 2; return { per, pct: per === 4 ? Math.min(100, W * 2) : W }; }
+function oGridHTML(q, list, lab) {
+  const { per, pct } = oLayout(q, list);
+  const cell = (o, i) => { const s = oSrc(q, i), ar = q.oimg[i] || 1;
+    return `<div class="oi"><span class="l"${lab ? ` style="${lab}"` : ""}>${"abcd"[i]})</span><div class="ob">${o ? `<div>${mt(o)}</div>` : ""}${s ? `<img src="${s}" alt="" style="width:${pct}%;aspect-ratio:${ar}">` : q.oimg[i] ? `<div class="oimiss" style="width:${pct}%;aspect-ratio:${ar}"></div>` : ""}</div></div>`; };
+  const rows = []; for (let i = 0; i < list.length; i += per) rows.push(`<div class="ogi c${per}">${list.slice(i, i + per).map((o, j) => cell(o, i + j)).join("")}</div>`);
+  return rows;
+}
 async function loadPickedImages() {
-  const need = [...picked.values()].filter(q => q.hasImg && !imgCache[q.id]).map(q => q.id);
+  const need = [...picked.values()].flatMap(q => [...(q.hasImg ? [q.id] : []), ...oIdsOf(q)]).filter(id => !imgCache[id]);
   if (need.length) { try { Object.assign(imgCache, await api.images(need)); } catch (e) { toast("Some diagrams could not be loaded."); } }
 }
 
@@ -825,7 +838,8 @@ function addTypeUI(){const t=$("aType").value;$("aOpts").hidden=!isMCQ(t);$("aRe
 function ansPickUI(){const t=$("aType").value,on=isMCQ(t)||t==="AR";$("aAnsL").hidden=on;$("aAnsPick").hidden=!on;if(!on)return;
   const cur=($("aAns").value.trim().match(/^\(?([a-dA-D])\)?$/)||[])[1];const a=cur?cur.toLowerCase():"";
   $("aAnsBtns").innerHTML="abcd".split("").map((L,i)=>{const txt=t==="AR"?AR_OPTS[i]:$("aO"+i).value.trim();
-    return `<button type="button" class="apb${a===L?" on":""}" role="radio" aria-checked="${a===L}" data-l="${L}"><b>${L}</b><span>${txt?mt(txt):'<i class="muted">empty</i>'}</span></button>`}).join("")}
+    const oi=t!=="AR"&&typeof aOImg!=="undefined"&&aOImg[i];
+    return `<button type="button" class="apb${a===L?" on":""}" role="radio" aria-checked="${a===L}" data-l="${L}"><b>${L}</b><span>${txt?mt(txt):oi?"":'<i class="muted">empty</i>'}${oi?`<img class="apimg" src="${oi.src}" alt="">`:""}</span></button>`}).join("")}
 $("aAnsBtns").addEventListener("click",e=>{const b=e.target.closest(".apb");if(!b)return;$("aAns").value=$("aAns").value.trim().toLowerCase()===b.dataset.l?"":b.dataset.l;ansPickUI()});
 ["aO0","aO1","aO2","aO3"].forEach(id=>$(id).addEventListener("input",()=>{clearTimeout(ansPickUI.t);ansPickUI.t=setTimeout(ansPickUI,250)}));
 $("aType").onchange=addTypeUI;
@@ -853,7 +867,7 @@ $("aConcept").onchange=()=>{$("aConceptNew").hidden=$("aConcept").value!==NEW;if
 let addKeep=null;   // remember the last chapter/concept so several questions can be added in a row
 let editing=null;   // the question being edited, or null when adding a new one
 const ADD_FIELDS=["aText","aReason","aCase","aO0","aO1","aO2","aO3","aAns","aChapterNew","aConceptNew"];
-function clearAddForm(){ADD_FIELDS.forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;$("aImgW").value="70";aImgUI();$("aErr").textContent="";$("aImgMsg").textContent="";$("aPasteNote").hidden=true;ansPickUI()}
+function clearAddForm(){ADD_FIELDS.forEach(i=>$(i).value="");$("aSrcRows").innerHTML="";aImg=null;$("aImgW").value="70";aImgUI();$("aErr").textContent="";$("aImgMsg").textContent="";$("aPasteNote").hidden=true;aOImg=[null,null,null,null];$("aOW").value="60";oImgUI()}
 function addMode(isEdit){$("addTitle").textContent=isEdit?"Edit question":"Add a question";$("addSave").textContent=isEdit?"Save changes":"Save question"}
 $("addOpen").onclick=()=>{if(editing){editing=null;clearAddForm();setEx("aExam",["CBSE"])}addMode(false);$("addModal").hidden=false;
   const k=addKeep&&(!nav.chapter||(addKeep.cls===nav.cls&&addKeep.subject===nav.subject&&addKeep.chapter===nav.chapter))?addKeep:{cls:nav.cls||10,subject:nav.subject,chapter:nav.chapter,concept:fConcept&&fConcept!=="\u0000"?fConcept:""};
@@ -890,13 +904,30 @@ document.addEventListener("paste",e=>{
   const cd=e.clipboardData;if(!cd)return;const it=[...cd.items].find(i=>i.kind==="file"&&i.type.startsWith("image/"));if(!it)return;
   const t=e.target,inBox=t&&(t.tagName==="TEXTAREA"||(t.tagName==="INPUT"&&/^(text|search|)$/.test(t.type)));
   if(inBox&&(cd.getData("text/plain")||"").trim())return;
-  e.preventDefault();const f=it.getAsFile();if(f)aImgFrom(f)});
+  e.preventDefault();const f=it.getAsFile();if(!f)return;const ok=t&&/^aO[0-3]$/.test(t.id)?+t.id[2]:-1;if(ok>=0)oImgFrom(ok,f);else aImgFrom(f)});
+// ---- pictures inside options (MCQ): aOImg[k] = {src, ar, existing}
+var aOImg=[null,null,null,null];
+const OPT_PX=500;
+function oImgUI(){document.querySelectorAll("#aOpts .obar").forEach(bar=>{const k=+bar.dataset.k,o=aOImg[k],th=bar.querySelector(".othumb");
+    th.hidden=!o||!o.src;if(o&&o.src)th.src=o.src;bar.querySelector("[data-op=crop]").hidden=!o;bar.querySelector("[data-op=del]").hidden=!o;
+    bar.querySelector(".filebtn").firstChild.nodeValue=o?"Change":"+ Image"});
+  const any=aOImg.some(Boolean);$("aOSize").hidden=!any;$("aOWVal").textContent=$("aOW").value+"%";ansPickUI()}
+async function oImgFrom(k,blob){const url=URL.createObjectURL(blob);
+  try{const c=await imgCanvas(url);dcOpen(c,out=>{aOImg[k]=out;oImgUI()},OPT_PX)}catch(e){$("aErr").textContent="Could not open that picture. Use JPG or PNG."}finally{URL.revokeObjectURL(url)}}
+$("aOpts").addEventListener("change",e=>{const k=e.target.dataset.oin;if(k==null)return;const f=e.target.files&&e.target.files[0];setTimeout(()=>{e.target.value=""},0);if(f)oImgFrom(+k,f)});
+$("aOpts").addEventListener("click",async e=>{const b=e.target.closest("[data-op]");if(!b)return;const k=+b.closest(".obar").dataset.k;
+  if(b.dataset.op==="del"){aOImg[k]=null;oImgUI();return}
+  if(b.dataset.op==="crop"&&aOImg[k]){try{dcOpen(await imgCanvas(aOImg[k].src),out=>{aOImg[k]=out;oImgUI()},OPT_PX)}catch(err){}return}
+  if(b.dataset.op==="paste"){if(!navigator.clipboard||!navigator.clipboard.read){$("aErr").textContent="This browser cannot paste from this button. Click in the option box and press Ctrl + V.";return}
+    try{for(const it of await navigator.clipboard.read()){const t=it.types.find(x=>x.startsWith("image/"));if(t){oImgFrom(k,await it.getType(t));return}}$("aErr").textContent="No picture is copied."}
+    catch(err){$("aErr").textContent="Paste was not allowed. Click in the option box and press Ctrl + V."}}});
+$("aOW").addEventListener("input",()=>{$("aOWVal").textContent=$("aOW").value+"%"});
 // ---- diagram crop: a rectangle with four corner handles (values are 0–1 of the picture)
 const dc={c:null,cb:null,r:{x:0,y:0,w:1,h:1}};
-function dcOpen(canvas,cb){dc.c=canvas;dc.cb=cb;dc.r={x:0,y:0,w:1,h:1};$("dcImg").src=canvas.toDataURL("image/jpeg",0.9);$("dcModal").hidden=false;dcDraw()}
+function dcOpen(canvas,cb,max=900){dc.max=max;dc.c=canvas;dc.cb=cb;dc.r={x:0,y:0,w:1,h:1};$("dcImg").src=canvas.toDataURL("image/jpeg",0.9);$("dcModal").hidden=false;dcDraw()}
 function dcDraw(){const r=dc.r,s=$("dcRect").style;s.left=r.x*100+"%";s.top=r.y*100+"%";s.width=r.w*100+"%";s.height=r.h*100+"%"}
 function dcDone(r){const c=dc.c,sx=Math.round(r.x*c.width),sy=Math.round(r.y*c.height),sw=Math.max(1,Math.round(r.w*c.width)),sh=Math.max(1,Math.round(r.h*c.height));
-  const k=Math.min(1,900/Math.max(sw,sh)),o=document.createElement("canvas");o.width=Math.max(1,Math.round(sw*k));o.height=Math.max(1,Math.round(sh*k));
+  const k=Math.min(1,(dc.max||900)/Math.max(sw,sh)),o=document.createElement("canvas");o.width=Math.max(1,Math.round(sw*k));o.height=Math.max(1,Math.round(sh*k));
   const x=o.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,o.width,o.height);x.imageSmoothingQuality="high";x.drawImage(c,sx,sy,sw,sh,0,0,o.width,o.height);
   $("dcModal").hidden=true;const cb=dc.cb;dc.c=dc.cb=null;cb&&cb({src:o.toDataURL("image/jpeg",0.88),ar:o.width/o.height})}
 $("dcSave").onclick=()=>dcDone(dc.r);
@@ -923,6 +954,11 @@ async function openEdit(q){
   (q.src||[]).forEach(x=>srcRow(x.s,x.y));
   $("aImgW").value=String(q.imgW||70);aImgWUI();
   $("addModal").hidden=false;
+  if(isMCQ(q.type)&&Array.isArray(q.oimg)&&q.oimg.some(Boolean)){$("aOW").value=String(q.oimgW||60);
+    const ids=q.oimg.map((a,k)=>a?q.id+"_o"+k:null).filter(Boolean),need=ids.filter(x=>!imgCache[x]);
+    if(need.length){try{Object.assign(imgCache,await api.images(need))}catch(e){}}
+    if(editing!==q)return;
+    aOImg=q.oimg.map((a,k)=>a?{src:imgCache[q.id+"_o"+k]||"",ar:a,existing:true}:null);oImgUI()}
   if(q.hasImg){$("aImgMsg").textContent="Loading diagram…";
     try{if(!imgCache[q.id])Object.assign(imgCache,await api.images([q.id]));}catch(e){}
     if(editing!==q)return;
@@ -936,7 +972,7 @@ $("addSave").onclick=async()=>{
   if(!$("aSubject").value){$("aErr").textContent="This class has no subjects. Add one in Admin → Syllabus.";return}
   if(!chapter){$("aErr").textContent="Choose a chapter, or type the new chapter's name.";return}
   if($("aConcept").value===NEW&&!concept){$("aErr").textContent="Type the new concept's name, or choose No concept.";return}
-  if(isMCQ(t)&&opts.some(o=>!o)){$("aErr").textContent="Fill all four options.";return}
+  if(isMCQ(t)&&opts.some((o,i)=>!o&&!aOImg[i])){$("aErr").textContent="Fill all four options (text or picture).";return}
   if((isMCQ(t)||t==="AR")&&$("aAns").value.trim()&&!/^\(?[a-dA-D]\)?$/.test($("aAns").value.trim())){$("aErr").textContent="Tick the correct option.";return}
   if(t==="AR"&&!$("aReason").value.trim()){$("aErr").textContent="Write the Reason (R).";return}
   const q={exam:getEx("aExam"),cls:+$("aClass").value,subject:$("aSubject").value,chapter,type:t,text,ans:t==="TF"?tfAns($("aAns").value.trim()):$("aAns").value.trim(),marks:+$("aMarks").value||1};
@@ -944,6 +980,8 @@ $("addSave").onclick=async()=>{
   if(isMCQ(t))q.opts=opts; if(t==="AR"){q.opts=AR_OPTS;q.reason=$("aReason").value.trim()} if(t==="CS")q.case=$("aCase").value.trim();
   if(concept)q.concept=concept;
   if(aImg){q.img=aImg.src;q.imgAR=aImg.ar;q.imgW=+$("aImgW").value}
+  if(isMCQ(t)&&aOImg.some(Boolean)){q.oimg=aOImg.map(o=>o?+o.ar.toFixed(4):0);q.oimgs=aOImg.map(o=>o?(o.existing?"keep":o.src):null);q.oimgW=+$("aOW").value}
+  else if(editing&&editing.oimg)q.oimgs=[null,null,null,null];          // pictures removed
   const qsrc=readSrcRows();if(qsrc.length)q.src=qsrc;
   // look for the same / similar question in this chapter first
   $("addSave").disabled=true;$("aErr").textContent="Checking for similar questions…";
@@ -980,6 +1018,7 @@ async function saveEdit(old,q){
   catch(err){$("aErr").textContent="Could not save. Check your internet and try again.";$("addSave").disabled=false;return}
   $("addSave").disabled=false;
   if(imgMode==="new")imgCache[old.id]=q.img;if(imgMode==="remove")delete imgCache[old.id];
+  if(q.oimgs)q.oimgs.forEach((d,k)=>{const x=old.id+"_o"+k;if(typeof d==="string"&&d.startsWith("data:"))imgCache[x]=d;else if(!d)delete imgCache[x]});
   if(addFromQuestions(syllabus,[saved])){try{await saveSyllabus()}catch(e){}}
   try{chapterMap=await api.chapters();mergeChapterMap(syllabus,chapterMap)}catch(e){}
   const i=current.findIndex(x=>x.id===old.id);
@@ -1050,6 +1089,8 @@ function rowsToQuestions(rows,images){
   if(newCh.size||newCon.size)notes.push(`New in the syllabus: ${[newCh.size?`${newCh.size} chapter${newCh.size>1?"s":""}`:"",newCon.size?`${newCon.size} concept${newCon.size>1?"s":""}`:""].filter(Boolean).join(" and ")}. They will be added when you import. If that is a spelling mistake, fix the sheet first.`);
   return {out,probs,note:notes.join(" ")};
 }
+// a data-URL picture made smaller (keeps it if it is already small)
+async function shrinkData(src,max){try{const c=await imgCanvas(src,max);return c.toDataURL("image/jpeg",0.88)}catch(e){return src}}
 function shrinkImage(f){return new Promise(res=>{const url=URL.createObjectURL(f);const img=new Image();
   img.onload=()=>{const k=Math.min(1,900/Math.max(img.naturalWidth,img.naturalHeight));const c=document.createElement("canvas");c.width=Math.round(img.naturalWidth*k);c.height=Math.round(img.naturalHeight*k);
     const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res({src:c.toDataURL("image/jpeg",0.88),ar:c.width/c.height})};
@@ -1210,7 +1251,7 @@ function parseWord(paras){
   const lf=p=>p.list?p.list.fmt:"";
   const isQList=p=>{if(!p.list||!/decimal/i.test(p.list.fmt))return false;if(qNum===null){qNum=p.list.id;return true}return p.list.id===qNum&&p.list.lv==="0"};
   const isOptList=p=>p.list&&cur&&(/letter|bullet/i.test(p.list.fmt)||(/decimal/i.test(p.list.fmt)&&!(p.list.id===qNum&&p.list.lv==="0")));
-  const startQ=t=>{cur={text:t||"",opts:[],imgs:[],ans:"",reason:"",assert:"",casePas:"",lines:[],src:[]};qs.push(cur);last="text"};
+  const startQ=t=>{cur={text:t||"",opts:[],oimgs:[],imgs:[],ans:"",reason:"",assert:"",casePas:"",lines:[],src:[]};qs.push(cur);last="text"};
   const addOpt=(L,t)=>{if(!cur)return;const i="abcd".indexOf(L.toLowerCase());if(i<0)return;cur.opts[i]=(t||"").trim();last="opt"+i};
   const keyPairs=t=>{let m,re=/(?:Q\.?\s*)?(\d{1,3})\s*[.)\-:–]?\s*\(?([a-dA-D])\)?(?![a-z])/g,found=0;while((m=re.exec(t))){key[+m[1]]=m[2].toLowerCase();found++}return found};
   const OPT_SPLIT=/(?:^|\s)\(?([a-dA-D])\)\s*|(?:^|\t|\s{2,})([a-dA-D])[.)]\s+/g;
@@ -1239,20 +1280,23 @@ function parseWord(paras){
     if(qm){startQ("");t=(qm[2]||"").trim();if(!t){cur.imgs.push(...p.imgs);continue}}
     if(!cur){continue}
     // auto-lettered option
-    if(!qm&&isOptList(p)&&!/roman/i.test(lf(p))){addOpt("abcd"[cur.opts.filter(x=>x!==undefined).length]||"d",t);cur.imgs.push(...p.imgs);continue}
+    if(!qm&&isOptList(p)&&!/roman/i.test(lf(p))){const L="abcd"[cur.opts.filter(x=>x!==undefined).length]||"d";addOpt(L,t);if(p.imgs.length)cur.oimgs["abcd".indexOf(L)]=p.imgs[0];continue}
     // assertion / reason
     const as=t.match(/^assertion\s*(?:\(A\))?\s*[:\-–]\s*(.*)$/is);if(as){cur.assert=as[1].trim();last="assert";cur.imgs.push(...p.imgs);continue}
     const rs=t.match(/^reason\s*(?:\(R\))?\s*[:\-–]\s*(.*)$/is);if(rs){cur.reason=rs[1].trim();last="reason";continue}
     // options written as text: "(a) Two (b) Four" or "a) Two"
     if(/^\(?[a-dA-D]\)\s*|^[a-dA-D][.)]\s+/.test(t)){
       const parts=[];let m;OPT_SPLIT.lastIndex=0;while((m=OPT_SPLIT.exec(t)))parts.push({L:m[1]||m[2],i:m.index,end:OPT_SPLIT.lastIndex});
-      parts.forEach((x,k)=>addOpt(x.L,t.slice(x.end,k+1<parts.length?parts[k+1].i:undefined)));cur.imgs.push(...p.imgs);continue}
+      parts.forEach((x,k)=>addOpt(x.L,t.slice(x.end,k+1<parts.length?parts[k+1].i:undefined)));
+      // pictures in an option line belong to those options (one each, in order)
+      if(p.imgs.length&&p.imgs.length===parts.length)parts.forEach((x,k)=>{cur.oimgs["abcd".indexOf(x.L.toLowerCase())]=p.imgs[k]});
+      else if(p.imgs.length&&parts.length===1)cur.oimgs["abcd".indexOf(parts[0].L.toLowerCase())]=p.imgs[0];else cur.imgs.push(...p.imgs);continue}
     // roman sub-questions belong to the question text
     if(/roman/i.test(lf(p)))t="("+["i","ii","iii","iv","v","vi"][cur.lines.length%6]+") "+t;
     // continuation text
     if(last==="ans"&&/^[A-Za-z .&-]{2,30}:$/.test(t))continue;   // section labels such as "HOTS:"
     if(last==="ans"){if(!/^[abcd]$/.test(cur.ans))cur.ans=(cur.ans+" "+t).trim();cur.imgs.push(...p.imgs);continue}   // answer written on the next line(s)
-    if(last.startsWith("opt")){const i=+last.slice(3);cur.opts[i]+=" "+t}
+    if(last.startsWith("opt")){const i=+last.slice(3);if(t)cur.opts[i]+=" "+t;if(p.imgs.length&&!cur.oimgs[i]){cur.oimgs[i]=p.imgs[0];continue}}
     else if(last==="reason")cur.reason+=" "+t;
     else if(last==="assert")cur.assert+=" "+t;
     else cur.lines.push(t);
@@ -1261,7 +1305,7 @@ function parseWord(paras){
   // finalise
   const res=qs.map((q,ix)=>{const n=ix+1;let type,text=q.lines.join("\n").trim(),issues=[],passage="";
     if(q.assert||(/assertion/i.test(text)&&q.reason)){type="AR";text=q.assert||text.replace(/^.*?assertion\s*(?:\(A\))?\s*[:\-–]\s*/is,"")}
-    else if(q.opts.filter(Boolean).length>=2)type=[...q.src,...parseSources((text.match(/[\[(]([^\[\]()]{3,60})[\])]\s*$/)||[])[1]||"")].some(x=>/^(JEE|NEET)/.test(x.s))?"MCQJ":"MCQ";
+    else if([0,1,2,3].filter(i=>q.opts[i]||q.oimgs[i]).length>=2)type=[...q.src,...parseSources((text.match(/[\[(]([^\[\]()]{3,60})[\])]\s*$/)||[])[1]||"")].some(x=>/^(JEE|NEET)/.test(x.s))?"MCQJ":"MCQ";
     else if(/read the (following )?(passage|case|paragraph|text|source)|case\s*study|case\s*based/i.test(text)){type="CS";
       const ls=q.lines.slice();const intro=/^read the|case\s*(study|based)/i.test(ls[0]||"")?ls.shift():"";
       const subIx=ls.findIndex(l=>/^\(?(i|1|a)\)/i.test(l));passage=(subIx>0?ls.slice(0,subIx):ls.slice(0,1)).join(" ");text=(subIx>0?ls.slice(subIx):ls.slice(1)).join("\n")||intro}
@@ -1273,7 +1317,7 @@ function parseWord(paras){
     const tm=text.match(/\s*[\[(]([^\[\]()]{3,60})[\])]\s*$/);
     if(tm){const p=parseSources(tm[1]);if(p.length&&/\d{4}|ncert|exemplar|jee|neet|cbse|pyq|sample|board/i.test(tm[1])){for(const x of p)if(!src.some(y=>y.s===x.s&&y.y===x.y))src.push(x);text=text.slice(0,tm.index).trim()}}
     let ans=q.ans||key[n]||"";
-    if(isMCQ(type)){const o=[0,1,2,3].map(i=>(q.opts[i]||"").trim());if(o.some(x=>!x))issues.push("fewer than 4 options");q.opts=o;if(!/^[abcd]$/.test(ans)){if(ans)issues.push("answer is not a–d");else issues.push("no answer found");ans=/^[abcd]$/.test(ans)?ans:""}}
+    if(isMCQ(type)){const o=[0,1,2,3].map(i=>(q.opts[i]||"").trim());if(o.some((x,i)=>!x&&!q.oimgs[i]))issues.push("fewer than 4 options");q.opts=o;if(!/^[abcd]$/.test(ans)){if(ans)issues.push("answer is not a–d");else issues.push("no answer found");ans=/^[abcd]$/.test(ans)?ans:""}}
     if(type==="AR"&&!q.reason)issues.push("Reason not found");
     if(type==="AR"&&!/^[abcd]$/.test(ans))issues.push("no answer found");
     if(type==="TF")ans=tfAns(ans);
@@ -1282,7 +1326,8 @@ function parseWord(paras){
     if(mm&&+mm[1]>=1&&+mm[1]<=10){marks=+mm[1];text=text.slice(0,mm.index).trim();if(["M1","VSA","SA","LA"].includes(type))type={1:"M1",2:"VSA",3:"SA",5:"LA"}[marks]||type}
     if(!["MCQ","MCQJ","AR","TF","CS"].includes(type)){if(/^\s*give\s+reasons?\b/i.test(text)){type="GR";if(!mm)marks=1}else if(/\b(prove|show)\s+that\b/i.test(text)){type="PR";if(!mm)marks=3}}
     if(!text)issues.push("question text is empty");
-    return {n,type,type0:type,text,opts:q.opts,reason:q.reason,passage,ans,img:q.imgs[0]||null,issues,use:!!text,src,marks}});
+    const oimgs=isMCQ(type)&&q.oimgs.some(Boolean)?[0,1,2,3].map(i=>q.oimgs[i]||null):null;
+    return {n,type,type0:type,text,opts:q.opts,oimgs,reason:q.reason,passage,ans,img:q.imgs[0]||null,issues,use:!!text,src,marks}});
   return {meta,qs:res};
 }
 let wdData=null;
@@ -1307,7 +1352,7 @@ function wdRender(){const {qs}=wdData;
     <select data-i="${i}" class="wdCon" aria-label="Concept for Q${q.n}"><option value="">Concept: same as above</option><option value="\u0000" ${q.concept==="\u0000"?"selected":""}>No concept</option>${cons.map(c=>`<option value="${esc(c)}" ${q.concept===c?"selected":""}>${esc(c)}</option>`).join("")}</select>
     <div class="wtxt">${q.passage?`<div class="opts">${esc(q.passage).slice(0,160)}…</div>`:""}${mt(q.type==="AR"?"A: "+q.text:q.text).replace(/\n/g,"<br>")}
       ${q.type==="AR"?`<div class="opts">R: ${mt(q.reason)}</div>`:""}
-      ${isMCQ(q.type)?`<div class="opts">${q.opts.map((o,j)=>"abcd"[j]+") "+(o?mt(o):"<i>missing</i>")).join(" &nbsp; ")}</div>`:""}
+      ${isMCQ(q.type)?`<div class="opts">${q.opts.map((o,j)=>"abcd"[j]+") "+(o?mt(o):q.oimgs&&q.oimgs[j]?"":"<i>missing</i>")+(q.oimgs&&q.oimgs[j]?`<img class="wothumb" src="${q.oimgs[j].src}" alt="Option ${"abcd"[j]} picture">`:"")).join(" &nbsp; ")}</div>`:""}
       ${q.img?`<img class="qthumb" src="${q.img.src}" alt="Diagram">`:""}
       <div class="opts">${q.marks?`<span class="chip">${q.marks} mark${q.marks==1?"":"s"}</span> `:""}${q.src&&q.src.length?`<span class="chip srcchip">${esc(srcText(q))}</span> `:""}Answer: <b>${mt(q.ans||"–")}</b>${q.issues.length?` · <span style="color:var(--warn)">${esc(q.issues.join(", "))}</span>`:""}</div></div></div>`).join("")||`<div class="empty">No numbered questions were found. Questions should start with Q1., 1. or Word's own numbering.</div>`;
   $("wdGo").disabled=!qs.some(q=>q.use);
@@ -1339,9 +1384,11 @@ $("wdGo").onclick=async()=>{const cls=+$("wdCls").value,subject=$("wdSubject").v
   const add=wdData.qs.filter(q=>q.use).map((q,k)=>{const o={exam:exam.length?exam:["CBSE"],cls,subject,chapter,type:q.type,text:q.text,ans:q.type==="TF"?tfAns(q.ans):q.ans,marks:q.marks&&q.type===q.type0?q.marks:DEF_MARKS[q.type]||1};
     if(isMCQ(q.type))o.opts=q.opts.map(x=>x||"");if(q.type==="AR"){o.opts=AR_OPTS;o.reason=q.reason||""}if(q.type==="CS")o.case=q.passage||"";
     if(q.img){o.img=q.img.src;o.imgAR=q.img.ar;o.imgW=70}
+    if(isMCQ(q.type)&&q.oimgs&&q.oimgs.some(Boolean)){o.oimg=q.oimgs.map(x=>x?+x.ar.toFixed(4):0);o.oimgs=q.oimgs.map(x=>x?x.src:null);o.oimgW=60}
     const common=$("wdSrc").value?[{s:$("wdSrc").value,y:/^(19|20)\d{2}$/.test($("wdYear").value.trim())?$("wdYear").value.trim():""}]:[];
     const sr=q.src&&q.src.length?q.src:common;if(sr.length)o.src=sr;
     const con=q.concept==="\u0000"?"":q.concept||topCon;if(con)o.concept=con;return o});
+  for(const o of add)if(o.oimgs)o.oimgs=await Promise.all(o.oimgs.map(d=>d?shrinkData(d,OPT_PX):null));   // option pictures: 500 px
   const b=$("wdGo");b.disabled=true;$("wdMsg").textContent="Checking for similar questions…";
   try{const d=await dedupe(add);if(!d){$("wdMsg").textContent="Import cancelled. Nothing was changed.";return}
     const r=await applyDedupe(d);$("wdMsg").textContent="Saving to the question bank…";
@@ -1452,7 +1499,7 @@ function qHTML(q,n){
   const st=settings.srcOn&&srcText(q)?`<div class="srcl${ab?" abrow":""}"><span>[${esc(srcText(q))}]</span>${ab}</div>`:ab?`<div class="abrow">${ab}</div>`:"";
   // no blank answer lines under written questions (removed on request)
   let b="";
-  if(isMCQ(q.type))b=`<div class="s">${mk}${mt(q.text)}</div>`+optsHTML(q.opts)+st;
+  if(isMCQ(q.type))b=`<div class="s">${mk}${mt(q.text)}</div>`+(hasOImg(q)?oGridHTML(q,q.opts||[]).join(""):optsHTML(q.opts))+st;
   else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${mt(q.text)}</div><div class="s ar"><b>Reason (R):</b> ${mt(q.reason)}</div>`+optsHTML(AR_OPTS)+st;
   else if(q.type==="TF")b=`<div class="s">${mk}${mt(q.text)} <i>(True / False)</i></div>`+st;
   else if(q.type!=="CS")b=`<div class="s">${mk}${mt(q.text)}</div>`+st;   // other types
@@ -2050,12 +2097,14 @@ Rules:
 - For CS: "passage" is the passage, "text" the sub-questions one per line.
 - source: exam and year if printed, e.g. "JEE Main 2023" or "NEET 2021". topic: the topic or concept tag if printed.
 - answer: only if the answer is printed in the photo (MCQ/AR: the letter a, b, c or d; TF: True or False; otherwise the answer text). SOLVE_RULE
-- figure_box: if the question has a diagram or figure, its box in the photo as [ymin, xmin, ymax, xmax] on a 0-1000 scale; otherwise an empty list.
+- figure_box: if the question has a diagram or figure, its box in the photo as [ymin, xmin, ymax, xmax] on a 0-1000 scale; otherwise an empty list. Do not include the options' pictures in it.
+- option_boxes: only when the options are (or contain) pictures/graphs/diagrams: one box per option in order a, b, c, d, each [ymin, xmin, ymax, xmax] on a 0-1000 scale around that option's picture only (not its label); use [] for an option without a picture. If no option has a picture, return an empty list. For a picture-only option, its text in "options" is "".
 - If no question is visible, return an empty list.`;
 const PH_SCHEMA = { type: "OBJECT", properties: { questions: { type: "ARRAY", items: { type: "OBJECT", properties: {
   type: { type: "STRING", enum: PH_TYPES }, text: { type: "STRING" }, reason: { type: "STRING" }, passage: { type: "STRING" },
   options: { type: "ARRAY", items: { type: "STRING" } }, answer: { type: "STRING" }, answer_by_ai: { type: "BOOLEAN" },
-  source: { type: "STRING" }, topic: { type: "STRING" }, marks: { type: "INTEGER" }, figure_box: { type: "ARRAY", items: { type: "INTEGER" } } },
+  source: { type: "STRING" }, topic: { type: "STRING" }, marks: { type: "INTEGER" }, figure_box: { type: "ARRAY", items: { type: "INTEGER" } },
+  option_boxes: { type: "ARRAY", items: { type: "ARRAY", items: { type: "INTEGER" } } } },
   required: ["type", "text"] } } }, required: ["questions"] };
 async function phLoadCfg() { if (phCfg) return phCfg; try { phCfg = (await api.getPrivate("gemini")) || {}; } catch (e) { phCfg = {}; } return phCfg; }
 function phShow() { const has = !!(phCfg && phCfg.key); $("phKeyBox").hidden = has; $("phMain").hidden = !has; if (!has) { $("phKey").value = ""; $("phModel").value = (phCfg && phCfg.model) || ""; } }
@@ -2079,13 +2128,13 @@ function phPrepare(file) {
     img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("badimage")); }; img.src = url;
   });
 }
-function phCrop(canvas, box) {
+function phCrop(canvas, box, max = 900) {
   if (!Array.isArray(box) || box.length !== 4) return null;
   let [y0, x0, y1, x1] = box.map(v => Math.max(0, Math.min(1000, +v || 0)));
   if (y1 - y0 < 20 || x1 - x0 < 20) return null;
   const W = canvas.width, H = canvas.height, pad = 0.015;
   const sx = Math.max(0, (x0 / 1000 - pad) * W), sy = Math.max(0, (y0 / 1000 - pad) * H), ex = Math.min(W, (x1 / 1000 + pad) * W), ey = Math.min(H, (y1 / 1000 + pad) * H);
-  const k = Math.min(1, 900 / Math.max(ex - sx, ey - sy)), c = document.createElement("canvas"); c.width = Math.round((ex - sx) * k); c.height = Math.round((ey - sy) * k);
+  const k = Math.min(1, max / Math.max(ex - sx, ey - sy)), c = document.createElement("canvas"); c.width = Math.round((ex - sx) * k); c.height = Math.round((ey - sy) * k);
   const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(canvas, sx, sy, ex - sx, ey - sy, 0, 0, c.width, c.height);
   return { src: c.toDataURL("image/jpeg", 0.88), ar: c.width / c.height };
 }
@@ -2124,16 +2173,19 @@ async function phAsk(b64, solve, retried) {
 // one Gemini question -> the same shape the Word review screen uses
 function phToReview(g, canvas, n) {
   let type = PH_TYPES.includes(g.type) ? g.type : "VSA";
-  const opts = (g.options || []).map(o => String(o || "").replace(/^\s*\(?[a-dA-D1-4][).:]\s*/, "").trim()).filter(Boolean);
-  if (isMCQ(type) && opts.length < 2) type = "NUM";
+  const boxes = Array.isArray(g.option_boxes) ? g.option_boxes : [];
+  const oimgs = [0, 1, 2, 3].map(k => phCrop(canvas, boxes[k], OPT_PX)), withPic = oimgs.some(Boolean);
+  let opts = (g.options || []).map(o => String(o || "").replace(/^\s*\(?[a-dA-D1-4][).:]\s*/, "").trim());
+  if (!withPic) opts = opts.filter(Boolean);
+  if (isMCQ(type) && !withPic && opts.length < 2) type = "NUM";
   let src = parseSources(g.source || ""); if (isMCQ(type)) type = src.some(x => /^(JEE|NEET)/.test(x.s)) ? "MCQJ" : type === "MCQJ" && !src.length ? "MCQJ" : type;
   let ans = String(g.answer || "").trim(); const issues = [];
   if (isMCQ(type) || type === "AR") { const l = ans.match(/^\(?([a-dA-D])\)?(\W|$)/); ans = l ? l[1].toLowerCase() : ""; if (!ans) issues.push("no answer found"); }
   if (type === "TF") ans = tfAns(ans);
-  if (isMCQ(type)) { while (opts.length < 4) opts.push(""); if (opts.slice(0, 4).some(o => !o)) issues.push("fewer than 4 options"); }
+  if (isMCQ(type)) { while (opts.length < 4) opts.push(""); if (opts.slice(0, 4).some((o, k) => !o && !oimgs[k])) issues.push("fewer than 4 options"); }
   if (ans && g.answer_by_ai) issues.push("answer worked out by AI – check it");
   return { n, type, type0: type, text: String(g.text || "").trim(), opts: isMCQ(type) ? opts.slice(0, 4) : [], reason: String(g.reason || "").trim(), passage: String(g.passage || "").trim(),
-    ans, img: phCrop(canvas, g.figure_box), issues, use: !!String(g.text || "").trim(), src, marks: +g.marks || DEF_MARKS[type], topic: String(g.topic || "").trim() };
+    ans, img: phCrop(canvas, g.figure_box), oimgs: isMCQ(type) && withPic ? oimgs : null, issues, use: !!String(g.text || "").trim(), src, marks: +g.marks || DEF_MARKS[type], topic: String(g.topic || "").trim() };
 }
 $("phFiles").addEventListener("change", async e => {
   const files = [...(e.target.files || [])]; setTimeout(() => { e.target.value = ""; }, 0); if (!files.length) return;
@@ -2263,7 +2315,8 @@ function pptBlocks(q, n, imgPng) {
   else T(q.text + (q.type === "TF" ? " (True / False)" : ""), { label: `Q${n}` });
   if (imgPng) B.push({ k: "img", pct: effW(q), ...imgPng });
   if (q.type === "CS") (q.text || "").split("\n").filter(Boolean).forEach(t => T(t));
-  if (isMCQ(q.type) || q.type === "AR") {
+  if (hasOImg(q)) B.push({ k: "ogrid", html: oGridHTML(q, q.opts || [], "color:#F4AE22;font-weight:700").join(""), opts: q.opts || [] });
+  else if (isMCQ(q.type) || q.type === "AR") {
     const opts = q.type === "AR" ? AR_OPTS : (q.opts || []);
     opts.forEach((o, i) => B.push({ k: "opt", label: "abcd"[i] + ")", text: o || "", optIndex: i, optCount: opts.length, all: opts }));
   }
@@ -2287,6 +2340,11 @@ function layoutBlocks(blocks, w, pt, allowSplit) {
       const maxH = Math.min(2.3, BODY_H * 0.45); if (ih > maxH) { ih = maxH; iw = ih * b.ar; }
       if (ih > room()) { if (!allowSplit) return null; newPage(); }
       pages[pages.length - 1].push({ k: "img", x: IND, y, w: iw, h: ih, data: b.data }); y += ih + GAP; continue;
+    }
+    if (b.k === "ogrid") {                                     // options with pictures: one picture of the whole grid
+      const html = `<div class="pgrid">${b.html}</div>`, hh = mathHeight(html, w - OIND, pt);
+      if (hh > room()) { if (!allowSplit) return null; newPage(); }
+      pages[pages.length - 1].push({ k: "mgrid", x: OIND, y, w: w - OIND, h: hh, html, opts: b.opts }); y += hh + GAP; continue;
     }
     if (b.k === "src") {
       const lines = wrapLines(b.text, pt, w - IND), hh = lines.length * lineH(pt);
@@ -2420,6 +2478,12 @@ async function makePpt(opts) {
         const x = x0 + it.x, y = BODY_TOP + it.y;
         if (it.k === "img") { s.addImage({ data: it.data, x, y, w: it.w, h: it.h }); continue; }
         if (it.k === "src") { s.addText(it.lines.join(" "), { x, y, w: it.w, h: it.h, fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, align: "right", valign: "top", margin: 0 }); continue; }
+        if (it.k === "mgrid") {
+          const pic = await mathPng(it.html, it.w, pt, "#FFFFFF");
+          if (pic) s.addImage({ data: pic, x, y, w: it.w, h: it.h });
+          else s.addText(it.opts.map((o, k) => "abcd"[k] + ") " + plain(o || "[picture]")).join("    "), { x, y, w: it.w, h: it.h, fontFace: "Calibri", fontSize: pt, color: PPT.WHITE, valign: "top", margin: 0 });
+          continue;
+        }
         if (it.k === "mopt") {
           s.addText(it.label, { x, y, w: it.lab, h: lineH(pt), fontFace: "Calibri", fontSize: pt, bold: true, color: PPT.GOLD, valign: "top", margin: 0 });
           const pic = await mathPng(it.html, it.w - it.lab, pt, "#FFFFFF");

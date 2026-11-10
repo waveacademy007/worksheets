@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,800&family=EB+Garamond:wght@400;600;700;800&family=STIX+Two+Text:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
-<link rel="stylesheet" href="app.css?v=3.8">
+<link rel="stylesheet" href="app.css?v=3.9">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js" defer></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -465,10 +465,16 @@
       </div>
       <label class="f" id="aReasonL" hidden>Reason (R)<textarea id="aReason"></textarea></label>
       <div class="row2" id="aOpts">
-        <label class="f">Option a<input type="text" id="aO0"></label>
-        <label class="f">Option b<input type="text" id="aO1"></label>
-        <label class="f">Option c<input type="text" id="aO2"></label>
-        <label class="f">Option d<input type="text" id="aO3"></label>
+        <div class="ocell"><label class="f">Option a<input type="text" id="aO0"></label>
+          <div class="obar" data-k="0"><span class="btn sm filebtn">+ Image<input type="file" accept="image/*" data-oin="0" aria-label="Picture for option a"></span><button class="btn sm" type="button" data-op="paste">Paste</button><img class="othumb" hidden alt="Option a picture"><button class="btn sm" type="button" data-op="crop" hidden>Crop</button><button class="btn sm" type="button" data-op="del" hidden aria-label="Remove picture">✕</button></div></div>
+        <div class="ocell"><label class="f">Option b<input type="text" id="aO1"></label>
+          <div class="obar" data-k="1"><span class="btn sm filebtn">+ Image<input type="file" accept="image/*" data-oin="1" aria-label="Picture for option b"></span><button class="btn sm" type="button" data-op="paste">Paste</button><img class="othumb" hidden alt="Option b picture"><button class="btn sm" type="button" data-op="crop" hidden>Crop</button><button class="btn sm" type="button" data-op="del" hidden aria-label="Remove picture">✕</button></div></div>
+        <div class="ocell"><label class="f">Option c<input type="text" id="aO2"></label>
+          <div class="obar" data-k="2"><span class="btn sm filebtn">+ Image<input type="file" accept="image/*" data-oin="2" aria-label="Picture for option c"></span><button class="btn sm" type="button" data-op="paste">Paste</button><img class="othumb" hidden alt="Option c picture"><button class="btn sm" type="button" data-op="crop" hidden>Crop</button><button class="btn sm" type="button" data-op="del" hidden aria-label="Remove picture">✕</button></div></div>
+        <div class="ocell"><label class="f">Option d<input type="text" id="aO3"></label>
+          <div class="obar" data-k="3"><span class="btn sm filebtn">+ Image<input type="file" accept="image/*" data-oin="3" aria-label="Picture for option d"></span><button class="btn sm" type="button" data-op="paste">Paste</button><img class="othumb" hidden alt="Option d picture"><button class="btn sm" type="button" data-op="crop" hidden>Crop</button><button class="btn sm" type="button" data-op="del" hidden aria-label="Remove picture">✕</button></div></div>
+        <div class="imgsize osize" id="aOSize" hidden><div class="isz-row"><span>Option picture size</span><b id="aOWVal">60%</b></div>
+          <input type="range" id="aOW" min="20" max="100" step="1" value="60" aria-label="Option picture size"></div>
       </div>
       <label class="f" id="aAnsL">Answer<input type="text" id="aAns" placeholder="e.g. b"></label>
       <div class="f anspick" id="aAnsPick" hidden>Correct answer – tap to tick<div class="apk" id="aAnsBtns" role="radiogroup" aria-label="Correct answer"></div></div>
@@ -555,6 +561,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js" defer></script>
-<script type="module" src="app.js?v=3.8"></script>
+<script type="module" src="app.js?v=3.9"></script>
 </body>
 </html>
