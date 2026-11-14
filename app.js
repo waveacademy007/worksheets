@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=4.0";
+import { createApi, DEMO } from "./api.js?v=4.1";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.0";
-import { SAMPLE } from "./sample-questions.js?v=4.0";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.0";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.1";
+import { SAMPLE } from "./sample-questions.js?v=4.1";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.1";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "4.0";
+const APP_VERSION = "4.1";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -2379,7 +2379,7 @@ function pptBlocks(q, n, imgPng) {
   return B;
 }
 // Lay blocks out in a column of width w at font pt. Returns pages of placed pieces.
-function layoutBlocks(blocks, w, pt, allowSplit) {
+function layoutBlocks(blocks, w, pt, allowSplit, imgScale = 1) {
   const IND = ringD(pt) + 0.14, GAP = 0.13, OIND = IND, LAB = 0.4 * pt / 24;
   const pages = [[]]; let y = 0;
   const newPage = () => { pages.push([]); y = 0; };
@@ -2390,8 +2390,8 @@ function layoutBlocks(blocks, w, pt, allowSplit) {
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     if (b.k === "img") {
-      let iw = Math.max(0.6, (w - IND) * (b.pct || 70) / 100), ih = iw / b.ar;   // same % of the column as on the worksheet
-      const maxH = Math.min(2.3, BODY_H * 0.45); if (ih > maxH) { ih = maxH; iw = ih * b.ar; }
+      let iw = Math.max(0.3, (w - IND) * (b.pct || 70) / 100 * imgScale), ih = iw / b.ar;   // same % of the column as on the worksheet
+      const maxH = Math.min(2.3, BODY_H * 0.45) * imgScale; if (ih > maxH) { ih = maxH; iw = ih * b.ar; }
       if (ih > room()) { if (!allowSplit) return null; newPage(); }
       pages[pages.length - 1].push({ k: "img", x: IND, y, w: iw, h: ih, data: b.data }); y += ih + GAP; continue;
     }
@@ -2470,11 +2470,19 @@ async function mathPng(html, wIn, pt, color) {
 const pmHTML = (text, pre) => (pre ? `<b style="color:#F4AE22">${esc(pre)}</b>` : "") + mt(text).replace(/\n/g, "<br>");
 // Gold ring around "Q12": diameter grows a little with the font size
 const ringD = pt => Math.max(0.5, lineH(pt) * 1.18);
+// Every question on ONE slide, in the right-hand 30 % of the slide.
+// Font starts at 18 pt and gets smaller as needed; after that the diagram gets smaller too.
 function fitQuestion(blocks) {
-  const W = PPT.W;
-  for (const pt of [24, 22, 20, 18]) { const p = layoutBlocks(blocks, W * 0.30 - RIGHT_PAD, pt, false); if (p && p.length === 1) return { pages: p, pt, w: W * 0.30 - RIGHT_PAD }; }
-  for (const pt of [22, 20, 18]) { const p = layoutBlocks(blocks, W * 0.50 - RIGHT_PAD, pt, false); if (p && p.length === 1) return { pages: p, pt, w: W * 0.50 - RIGHT_PAD }; }
-  return { pages: layoutBlocks(blocks, W * 0.30 - RIGHT_PAD, 20, true), pt: 20, w: W * 0.30 - RIGHT_PAD };
+  const w = PPT.W * 0.30 - RIGHT_PAD, tries = [];
+  for (let pt = 18; pt >= 12; pt--) tries.push([pt, 1]);
+  for (const sc of [0.8, 0.65, 0.5]) for (let pt = 14; pt >= 10; pt--) tries.push([pt, sc]);
+  for (const sc of [0.4, 0.3, 0.2]) for (let pt = 11; pt >= 6; pt--) tries.push([pt, sc]);
+  for (const pt of [5.5, 5, 4.5, 4]) tries.push([pt, 0.15]);
+  for (const [pt, sc] of tries) { const p = layoutBlocks(blocks, w, pt, false, sc); if (p && p.length === 1) return { pages: p, pt, w }; }
+  // very long question: smallest size, everything kept on the first slide
+  const p = layoutBlocks(blocks, w, 4, true, 0.15), one = []; let off = 0;
+  for (const pg of p) { for (const it of pg) one.push({ ...it, y: it.y + off }); off += Math.max(0, ...pg.map(it => it.y + (it.h || (it.lines ? it.lines.length * lineH(4) : 0)))) + 0.05; }
+  return { pages: [one], pt: 4, w };
 }
 function pptChrome(pptx, slide, title, right, logo) {
   slide.background = { color: PPT.GREEN };
@@ -2495,10 +2503,24 @@ function pptChrome(pptx, slide, title, right, logo) {
   const f = { y: fy, h: PPT.FTR, fontFace: "Calibri", fontSize: 14, color: "E8E8E8", valign: "middle", margin: 0 };
   slide.addText(settings.teacher || profile.name || "", { ...f, x: 0.35, w: 4.2 });
   slide.addText(settings.academy || "", { ...f, x: 4.6, w: 4.1, align: "center", bold: true, color: PPT.GOLD });
-  slide.addText(settings.phone ? "Ph: " + settings.phone : "", { ...f, x: PPT.W - 4.55, w: 4.2, align: "right" });
+  if (settings.phone) {                                   // gold phone symbol (a small picture, looks the same everywhere) + number
+    slide.addText(settings.phone, { ...f, x: PPT.W - 4.55, w: 4.2, align: "right" });
+    const ic = 0.2, tw = measureIn(settings.phone, 14);
+    if (phoneIcon) slide.addImage({ data: phoneIcon, x: PPT.W - 0.35 - tw - 0.09 - ic, y: fy + (PPT.FTR - ic) / 2, w: ic, h: ic });
+  }
 }
 const clsText = () => String(settings.cls || "").replace(/\s*_\s*/g, " · ");
+// gold phone symbol for the footer, drawn once as a PNG
+let phoneIcon = null;
+function makePhoneIcon() {
+  if (phoneIcon) return phoneIcon;
+  const c = document.createElement("canvas"); c.width = c.height = 96; const x = c.getContext("2d");
+  x.scale(4, 4); x.fillStyle = "#" + PPT.GOLD;
+  x.fill(new Path2D("M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"));
+  return phoneIcon = c.toDataURL("image/png");
+}
 async function makePpt(opts) {
+  try { makePhoneIcon(); } catch (e) {}
   await loadPickedImages(); await ensureFonts();
   const qs0 = [...picked.values()];
   if (!qs0.length) { toast("Tick at least one question first"); return null; }
@@ -2517,6 +2539,8 @@ async function makePpt(opts) {
     s.addText(settings.topic || chapters.join(" · "), { x: 0.8, y: y + 0.85, w: PPT.W - 1.6, h: 0.6, fontFace: "Calibri", fontSize: 26, bold: true, color: PPT.GOLD, align: "center", margin: 0, fit: "shrink" });
     s.addText(`${settings.cls ? clsText() + " · " : ""}${N} question${N === 1 ? "" : "s"}`, { x: 0.8, y: y + 1.5, w: PPT.W - 1.6, h: 0.5, fontFace: "Calibri", fontSize: 20, color: "E8E8E8", align: "center", margin: 0 });
     if (settings.tp) { const v = tpVals(); s.addText(`Time: ${v.time}     ·     M.M.: ${v.mm}`, { x: 0.8, y: y + 2.05, w: PPT.W - 1.6, h: 0.5, fontFace: "Calibri", fontSize: 22, bold: true, color: PPT.GOLD, align: "center", margin: 0 }); }
+    // 4 empty slides after the title slide, for writing while teaching
+    for (let k = 0; k < 4; k++) { const e = pptx.addSlide(); pptChrome(pptx, e, settings.topic || chapters.join(" · "), clsText(), logo); }
   }
   for (let i = 0; i < N; i++) {
     const q = qs[i], n = i + 1;
