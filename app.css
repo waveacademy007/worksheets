@@ -100,7 +100,7 @@ select:focus-visible,input:focus-visible,textarea:focus-visible,button:focus-vis
 /* marks in their own column on the right: question text never runs under them */
 .mkon .ws-q:not(.wans) .qc{position:relative;padding-right:30px}
 .mkon .ws-q .mk{float:none;position:absolute;right:0;top:0;margin:0}
-.ws-sec{grid-column:1/-1;font-weight:800;font-size:14px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #111;margin:0 0 8px;padding-bottom:2px}
+.ws-sec{grid-column:1/-1;font-weight:800;font-size:calc(14px * var(--qk,1));text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #111;margin:0 0 8px;padding-bottom:2px}
 .ws-wm{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%) rotate(-55deg);font-size:92px;font-weight:700;letter-spacing:.06em;
   color:rgba(0,0,0,.07);white-space:nowrap;z-index:3;pointer-events:none;text-transform:uppercase}   /* on top of text and diagrams, light */
 .ws-foot{border-top:2px dashed #333;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:19px;position:relative}
@@ -109,7 +109,7 @@ select:focus-visible,input:focus-visible,textarea:focus-visible,button:focus-vis
 .ws-ktab th,.ws-ktab td{border:1px solid #333;padding:3px 0;line-height:1.2}
 .ws-ktab th{width:44px;font-weight:700;background:#f1f1f1}
 .ws-ktab .ka{font-weight:700}
-.ws-key{display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:14px;padding-top:6px}
+.ws-key{display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:calc(14px * var(--qk,1));padding-top:6px}
 .ws-key h4{grid-column:1/-1;font-size:18px;margin:0 0 6px}
 .logo-box{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:12px}
 .lb-title{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
@@ -602,7 +602,7 @@ input[type=range]{width:100%;accent-color:var(--accent);padding:0;border:0;backg
 .dtag.same{background:rgba(220,38,38,.12);color:#b91c1c}
 .dtag.sim{background:rgba(217,119,6,.14);color:#b45309}
 .dtxt{font-size:.93rem;line-height:1.55;overflow-wrap:anywhere}
-.dcase{color:var(--muted);font-style:italic}
+.dcase{color:var(--muted)}
 .dopts{margin:0;padding-left:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:2px 14px;font-size:.9rem}
 .dopts li.ok{font-weight:700;color:#15803d}
 .dans{font-size:.88rem;color:var(--muted)}
@@ -625,3 +625,17 @@ input[type=range]{width:100%;accent-color:var(--accent);padding:0;border:0;backg
 .pgrid .oi{grid-template-columns:1.5em 1fr;column-gap:.2em}
 .pgrid .oi .l{width:auto}
 .wothumb{max-height:36px;max-width:70px;vertical-align:middle;margin-left:4px;border:1px solid var(--line);border-radius:4px;background:#fff}
+
+/* darker print: pure black, medium weight (questions, options, key) */
+.ws-page{color:#000}
+.ws-body{font-weight:500}
+.ws-body b,.ws-body strong,.ws-body .ws-sec{font-weight:800}
+.ws-page .ws-q .case{background:#fff;border-color:#555}
+.wsize .isz-row{display:flex;align-items:center;gap:10px;text-transform:none;letter-spacing:0}
+.wsize input{flex:1}
+/* no italic anywhere: maths letters upright (x, R, g, α …) */
+.katex .mathnormal,.katex .mathit,.katex .boldsymbol{font-style:normal}
+.katex .mathnormal,.katex .mathit{font-family:KaTeX_Main,"Times New Roman",serif}
+.katex .boldsymbol{font-family:KaTeX_Main,"Times New Roman",serif;font-weight:700}
+.fi.doc{background:linear-gradient(135deg,#2b579a,#1e3f73)}
+.fmtgrid .fmt[data-fmt="docx"]{grid-column:1/-1}

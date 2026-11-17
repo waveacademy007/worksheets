@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=4.1";
+import { createApi, DEMO } from "./api.js?v=4.2";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.1";
-import { SAMPLE } from "./sample-questions.js?v=4.1";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.1";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.2";
+import { SAMPLE } from "./sample-questions.js?v=4.2";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.2";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "4.1";
+const APP_VERSION = "4.2";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -59,7 +59,7 @@ const FONTS = {
   source: { fam: '"Source Serif 4", "Bookman Old Style", Georgia, serif', size: 13.4 }
 };
 const DEFAULTS = { academy: "", teacher: "", phone: "", wm: "", logo: "", logoSize: 25, cls: "", topic: "",
-  group: false, marks: false, key: true, wmOn: true, srcOn: false, font: "garamond", imgSizes: {},
+  group: false, marks: false, key: true, wmOn: true, srcOn: false, font: "garamond", qScale: 100, imgSizes: {},
   tp: false, tpTime: "", tpMM: "", tpIns: "", tpNeg: "1", tpAns: true, tpEval: true };
 // Test paper: default instructions (teacher can change them; empty = no box)
 const TP_INS = "All questions are compulsory.\nMarks for each question are shown against it.\nUse of calculator is not allowed.";
@@ -308,10 +308,14 @@ const checks = [["wGroup", "group"], ["wMarks", "marks"], ["wKey", "key"], ["wWm
 bind.forEach(([id, k]) => $(id).addEventListener("input", () => { settings[k] = $(id).value; saveSet(); schedule(); }));
 checks.forEach(([id, k]) => $(id).addEventListener("change", () => { settings[k] = $(id).checked; saveSet(); schedule(); }));
 $("wFont").onchange = () => { settings.font = $("wFont").value; saveSet(); schedule(); };
+// text size of the worksheet only (PDF / print); the slides keep their own sizes
+const qScale = () => Math.min(140, Math.max(80, +settings.qScale || 100)) / 100;
+$("wSize").addEventListener("input", () => { settings.qScale = +$("wSize").value; $("wSizeVal").textContent = settings.qScale + "%"; saveSet(); schedule(); });
 function fillSettingsUI() {
   bind.forEach(([id, k]) => { $(id).value = settings[k] || ""; });
   checks.forEach(([id, k]) => { $(id).checked = !!settings[k]; });
   $("wFont").value = settings.font;
+  $("wSize").value = String(settings.qScale || 100); $("wSizeVal").textContent = (settings.qScale || 100) + "%";
   $("wTp").checked = !!settings.tp; $("tpBox").hidden = !settings.tp;
 }
 // ---- Test paper: Time (5 min per question) and M.M. (marks added up), unless the teacher typed them
@@ -711,7 +715,7 @@ async function loadPickedImages() {
 // ================= My Worksheets & Drafts =================
 let currentDraft = null;           // {id, name} while editing a draft
 let lastSavedSig = "";
-const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "srcOn", "font", "imgSizes", "tp", "tpTime", "tpMM", "tpIns", "tpNeg", "tpAns", "tpEval"];
+const WS_KEYS = ["cls", "topic", "group", "marks", "key", "wmOn", "srcOn", "font", "qScale", "imgSizes", "tp", "tpTime", "tpMM", "tpIns", "tpNeg", "tpAns", "tpEval"];
 // Diagram size: the teacher's choice for this worksheet, else the admin's default
 const effW = q => ((settings.imgSizes || {})[q.id]) || q.imgW || 70;
 function snapshot(kind, name) {
@@ -1470,7 +1474,7 @@ $("sLogoClear").onclick=()=>{settings.logo="";saveSet();logoUI();schedule();toas
 
 // ================= Worksheet layout =================
 function pageShell(n,lg){const L=lg?lg.logo:settings.logo,LS=mm(lg?lg.size:(settings.logoSize||25));
-  const p=document.createElement("div");p.className="ws-page"+(settings.marks?" mkon":"");p.style.fontFamily=curFont().fam;p.style.setProperty("--qs",curFont().size+"px");
+  const p=document.createElement("div");p.className="ws-page"+(settings.marks?" mkon":"");p.style.fontFamily=curFont().fam;p.style.setProperty("--qs",(curFont().size*qScale()).toFixed(2)+"px");p.style.setProperty("--qk",qScale());
   p.innerHTML=`<div class="ws-head"><div><h3>${esc(settings.academy)}</h3><div class="meta">${esc(settings.cls)}<br>Topic: ${esc(settings.topic)}</div></div>
   ${L?`<div class="ws-logo" style="width:${LS}px;height:${LS}px"><img src="${L}" alt=""></div>`:""}</div>
   ${settings.wmOn&&settings.wm?`<div class="ws-wm">${esc(settings.wm)}</div>`:""}
@@ -1501,7 +1505,7 @@ function qHTML(q,n){
   let b="";
   if(isMCQ(q.type))b=`<div class="s">${mk}${mt(q.text)}</div>`+(hasOImg(q)?oGridHTML(q,q.opts||[]).join(""):optsHTML(q.opts))+st;
   else if(q.type==="AR")b=`<div class="s ar">${mk}<b>Assertion (A):</b> ${mt(q.text)}</div><div class="s ar"><b>Reason (R):</b> ${mt(q.reason)}</div>`+optsHTML(AR_OPTS)+st;
-  else if(q.type==="TF")b=`<div class="s">${mk}${mt(q.text)} <i>(True / False)</i></div>`+st;
+  else if(q.type==="TF")b=`<div class="s">${mk}${mt(q.text)} (True / False)</div>`+st;
   else if(q.type!=="CS")b=`<div class="s">${mk}${mt(q.text)}</div>`+st;   // other types
   else if(q.type==="CS")b=`<div class="s">${mk}Read the passage and answer the questions that follow.</div><div class="case">${mt(q.case)}</div>`+q.text.split("\n").filter(Boolean).map(t=>`<div class="s">${mt(t)}</div>`).join("")+st;
   if(q.img){const im=`<div class="qimg"><img src="${q.img}" alt="" style="width:${effW(q)}%;aspect-ratio:${q.imgAR||1.5}"></div>`;
@@ -2307,9 +2311,9 @@ async function makePdf() {
   if (!window.jspdf || !window.html2canvas) { toast("PDF tools are not loaded yet. Open the app once with internet."); return null; }
   const { jsPDF } = window.jspdf; const pdf = new jsPDF({ unit: "mm", format: "a4" });
   for (let i = 0; i < pages.length; i++) {
-    const c = await html2canvas(pages[i], { scale: 2.2, backgroundColor: "#ffffff", useCORS: true, logging: false });
+    const c = await html2canvas(pages[i], { scale: 3, backgroundColor: "#ffffff", useCORS: true, logging: false });
     if (i) pdf.addPage();
-    pdf.addImage(c.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297);
+    pdf.addImage(c.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, 210, 297);
   }
   const name = `${(settings.topic || "worksheet").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "worksheet"}_worksheet.pdf`;
   return { pdf, name, blob: pdf.output("blob") };
@@ -2510,6 +2514,53 @@ function pptChrome(pptx, slide, title, right, logo) {
   }
 }
 const clsText = () => String(settings.cls || "").replace(/\s*_\s*/g, " · ");
+// ================= Word test file (.docx), in the format of the test-app template =================
+// Bold title line, then "1. question", "(a) option" … "(d) option", "Answer: (b)". Maths stays as $…$ text.
+async function makeTestDocx() {
+  await loadPickedImages();
+  const qs = wsOrder(); if (!qs.length) { toast("Tick at least one question first"); return null; }
+  if (!window.JSZip) { toast("The Word tools did not load. Check your internet and reload."); return null; }
+  const X = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const media = []; let pid = 0;
+  const run = (t, bold) => String(t ?? "").split("\n").map((line, i) => (i ? "<w:r><w:br/></w:r>" : "") + `<w:r>${bold ? "<w:rPr><w:b/></w:rPr>" : ""}<w:t xml:space="preserve">${X(line)}</w:t></w:r>`).join("");
+  const para = inner => `<w:p>${inner}</w:p>`;
+  const EMU = 914400;
+  function pic(dataUrl, ar, wIn) {
+    const m = /^data:image\/(png|jpe?g|gif);base64,(.*)$/i.exec(dataUrl || ""); if (!m) return "";
+    const ext = m[1].toLowerCase() === "png" ? "png" : m[1].toLowerCase() === "gif" ? "gif" : "jpeg", id = ++pid, rid = "rIdImg" + id, name = `image${id}.${ext}`;
+    media.push({ rid, name, b64: m[2], ext });
+    const cx = Math.round(wIn * EMU), cy = Math.round(wIn / (ar || 1.5) * EMU);
+    return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="Picture ${id}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+  }
+  const chapters = [...new Set(qs.map(q => q.chapter))];
+  const title = `${(settings.cls || "").replace(/\s*_\s*/g, " ").trim()}${settings.cls ? ": " : ""}${settings.topic || chapters.join(", ")}`;
+  const body = [para(run(title, true))];
+  qs.forEach((q, i) => {
+    const n = i + 1; let text = q.text || "";
+    if (q.type === "AR") text = `Assertion (A): ${q.text}\nReason (R): ${q.reason || ""}`;
+    else if (q.type === "CS") text = `Read the passage and answer the questions that follow.\n${q.case || ""}\n${q.text}`;
+    body.push(para(run(`${n}. ${text}`)));
+    if (q.hasImg && imgCache[q.id]) body.push(para(pic(imgCache[q.id], q.imgAR, Math.max(1.2, Math.min(5.5, 5.5 * effW(q) / 100)))));
+    let opts = null, ans = String(q.ans || "").trim();
+    if (isMCQ(q.type)) opts = q.opts || []; else if (q.type === "AR") opts = AR_OPTS; else if (q.type === "TF") { opts = ["True", "False"]; const t = tfAns(ans); ans = t === "True" ? "a" : t === "False" ? "b" : ans; }
+    if (opts) opts.forEach((o, k) => { const src = hasOImg(q) && oSrc(q, k);
+      body.push(para(run(`(${"abcd"[k]}) ${o || ""}`) + (src ? run(" ") + pic(src, q.oimg[k], Math.min(2.2, 1.6 * (q.oimgW || 60) / 60)) : ""))); });
+    const letter = /^\(?([a-dA-D])\)?$/.exec(ans);
+    body.push(para(run("Answer: " + (opts && letter ? `(${letter[1].toLowerCase()})` : ans || "–"))));
+  });
+  const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${NS}><w:body>${body.join("")}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800" w:header="720" w:footer="720" w:gutter="0"/><w:cols w:space="720"/></w:sectPr></w:body></w:document>`;
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="gif" ContentType="image/gif"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`);
+  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
+  zip.file("word/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-IN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="200" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`);
+  zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${media.map(m => `<Relationship Id="${m.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${m.name}"/>`).join("")}</Relationships>`);
+  zip.file("word/document.xml", doc);
+  media.forEach(m => zip.file("word/media/" + m.name, m.b64, { base64: true }));
+  const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+  const name = `${(settings.topic || chapters[0] || "test").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "test"}_test.docx`;
+  return { name, blob };
+}
 // gold phone symbol for the footer, drawn once as a PNG
 let phoneIcon = null;
 function makePhoneIcon() {
@@ -2662,10 +2713,11 @@ $("pTitle").onchange = () => { settings.pptTitle = $("pTitle").checked; saveSet(
 $("pKey").onchange = () => { settings.pptKey = $("pKey").checked; saveSet(); };
 document.querySelectorAll("#fmtModal [data-fmt]").forEach(b => b.onclick = async () => {
   const fmt = b.dataset.fmt, btns = [...document.querySelectorAll("#fmtModal [data-fmt]")];
-  btns.forEach(x => x.disabled = true); $("fmtMsg").textContent = fmt === "ppt" ? "Making slides…" : "Making PDF…";
+  btns.forEach(x => x.disabled = true); $("fmtMsg").textContent = fmt === "ppt" ? "Making slides…" : fmt === "docx" ? "Making Word file…" : "Making PDF…";
   try {
     let file;
     if (fmt === "pdf") { const r = await makePdf(); if (r) file = { name: r.name, blob: r.blob, mime: "application/pdf", pdf: r.pdf }; }
+    else if (fmt === "docx") { const r = await makeTestDocx(); if (r) file = { name: r.name, blob: r.blob, mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }; }
     else { const r = await makePpt({ title: $("pTitle").checked, key: $("pKey").checked }); if (r) file = { name: r.name, blob: r.blob, mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }; }
     if (!file) { $("fmtMsg").textContent = ""; return; }
     autoSaveWorksheet();
