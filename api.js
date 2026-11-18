@@ -60,7 +60,7 @@ async function firebaseApi() {
       let admin = false;
       try { admin = (await F.getDoc(F.doc(db, "admins", u.uid))).exists(); } catch (e) { admin = false; }
       const d = snap.data();
-      return { admin, planUntil: toMs(d.planUntil), branding: d.branding || {}, name: d.name || "", refRewards: d.refRewards || 0, referredBy: d.referredBy || null };
+      return { admin, planUntil: toMs(d.planUntil), branding: d.branding || {}, name: d.name || "", refRewards: d.refRewards || 0, referredBy: d.referredBy || null, blocked: !!d.blocked };
     },
     saveBranding(uid, branding) { return F.updateDoc(F.doc(db, "users", uid), { branding }); },
     // ---- my worksheets & drafts: users/{uid}/worksheets
@@ -216,9 +216,12 @@ async function firebaseApi() {
     async users() {
       const r = await F.getDocs(F.query(F.collection(db, "users"), F.orderBy("createdAt", "desc"), F.limit(1000)));
       const admins = new Set((await F.getDocs(F.collection(db, "admins"))).docs.map(d => d.id));
-      return r.docs.map(d => { const x = d.data(); return { uid: d.id, email: x.email, name: x.name, createdAt: toMs(x.createdAt), planUntil: toMs(x.planUntil), admin: admins.has(d.id), referredBy: x.referredBy || null, referralRewarded: !!x.referralRewarded }; });
+      return r.docs.map(d => { const x = d.data(); return { uid: d.id, email: x.email, name: x.name, createdAt: toMs(x.createdAt), planUntil: toMs(x.planUntil), admin: admins.has(d.id), referredBy: x.referredBy || null, referralRewarded: !!x.referralRewarded, blocked: !!x.blocked }; });
     },
     setPlan(uid, ms) { return F.updateDoc(F.doc(db, "users", uid), { planUntil: ms == null ? null : F.Timestamp.fromMillis(ms) }); },
+    // admin: block / unblock a teacher, or remove the teacher's record (their login and saved worksheets stay)
+    setBlocked(uid, on) { return F.updateDoc(F.doc(db, "users", uid), { blocked: on ? true : F.deleteField() }); },
+    deleteUser(uid) { return F.deleteDoc(F.doc(db, "users", uid)); },
     // admin-only settings (e.g. the Gemini key for photo import): private/{name}, readable by admins only
     async getPrivate(name) { const s = await F.getDoc(F.doc(db, "private", name)); return s.exists() ? s.data() : null; },
     setPrivate(name, data) { return F.setDoc(F.doc(db, "private", name), data); }
@@ -258,7 +261,7 @@ function demoApi() {
     async signUpEmail(e, p, n) { if ((p || "").length < 6) throw { code: "auth/weak-password" }; login(e, n, p, true); },
     async resetPassword() { return wait(); },
     async signOut() { set("session", null); emit(); },
-    async loadProfile(u, ref) { pendingRef = ref; const x = get("users", {})[u.uid]; return wait({ admin: !!x.admin, planUntil: x.planUntil, branding: x.branding || {}, name: x.name, refRewards: x.refRewards || 0, referredBy: x.referredBy || null }); },
+    async loadProfile(u, ref) { pendingRef = ref; const x = get("users", {})[u.uid]; return wait({ admin: !!x.admin, planUntil: x.planUntil, branding: x.branding || {}, name: x.name, refRewards: x.refRewards || 0, referredBy: x.referredBy || null, blocked: !!x.blocked }); },
     async listWorksheets(kind) { const me = get("session", null); return wait(Object.entries(get("ws_" + me, {})).map(([id, w]) => ({ id, ...w })).filter(w => w.kind === kind).sort((a, b) => b.updatedAt - a.updatedAt)); },
     async getWorksheet(id) { const me = get("session", null); const w = get("ws_" + me, {})[id]; return w ? { id, ...w } : null; },
     async saveWorksheet(id, data) { const me = get("session", null); const all = get("ws_" + me, {}); id = id || "w" + Date.now().toString(36); all[id] = JSON.parse(JSON.stringify(data)); set("ws_" + me, all); return id; },
@@ -316,8 +319,10 @@ function demoApi() {
     async fixExams(fn) { const qs = get("questions", []); let n = 0; qs.forEach(q => { const ne = fn(q); if (JSON.stringify(ne) !== JSON.stringify(q.exam || null)) { q.exam = ne; n++; } }); set("questions", qs); return wait(n); },
     async syllabus() { return wait(get("syllabus", null)); },
     async saveSyllabus(s) { set("syllabus", s); },
-    async users() { return wait(Object.entries(get("users", {})).map(([uid, x]) => ({ uid, email: x.email, name: x.name, createdAt: x.createdAt, planUntil: x.planUntil, admin: !!x.admin, referredBy: x.referredBy || null, referralRewarded: !!x.referralRewarded })).sort((a, b) => b.createdAt - a.createdAt)); },
+    async users() { return wait(Object.entries(get("users", {})).map(([uid, x]) => ({ uid, email: x.email, name: x.name, createdAt: x.createdAt, planUntil: x.planUntil, admin: !!x.admin, referredBy: x.referredBy || null, referralRewarded: !!x.referralRewarded, blocked: !!x.blocked })).sort((a, b) => b.createdAt - a.createdAt)); },
     async setPlan(uid, ms) { const us = get("users", {}); us[uid].planUntil = ms; set("users", us); },
+    async setBlocked(uid, on) { const us = get("users", {}); if (on) us[uid].blocked = true; else delete us[uid].blocked; set("users", us); },
+    async deleteUser(uid) { const us = get("users", {}); delete us[uid]; set("users", us); },
     async getPrivate(name) { return get("private_" + name, null); },
     async setPrivate(name, data) { set("private_" + name, data); }
   };
@@ -418,6 +423,8 @@ function localApi() {
     async sendFeedback() {}, async listFeedback() { return []; }, async deleteFeedback() {}, async rewardReferral() {},
     async users() { return []; },
     async setPlan() {},
+    async setBlocked() {},
+    async deleteUser() {},
     getPrivate(name) { return kvGet("private_" + name); },
     setPrivate(name, data) { return kvSet("private_" + name, data); },
     // ---- backup / restore ----

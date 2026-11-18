@@ -639,3 +639,8 @@ input[type=range]{width:100%;accent-color:var(--accent);padding:0;border:0;backg
 .katex .boldsymbol{font-family:KaTeX_Main,"Times New Roman",serif;font-weight:700}
 .fi.doc{background:linear-gradient(135deg,#2b579a,#1e3f73)}
 .fmtgrid .fmt[data-fmt="docx"]{grid-column:1/-1}
+/* teachers: blocked */
+.pill.blk{color:#b42318;border-color:#b42318}
+.urow.blocked{background:#fff5f4}
+.urow.blocked .uinfo b{color:#7a271a}
+.btn.warnbtn{color:#b54708;border-color:#f3c48b}

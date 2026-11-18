@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=4.4";
+import { createApi, DEMO } from "./api.js?v=4.5";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.4";
-import { SAMPLE } from "./sample-questions.js?v=4.4";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.4";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.5";
+import { SAMPLE } from "./sample-questions.js?v=4.5";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.5";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "4.4";
+const APP_VERSION = "4.5";
 const APP_DATE = "18 Nov 2026";
 
 const $ = id => document.getElementById(id);
@@ -154,10 +154,12 @@ $("authForm").addEventListener("submit", async e => {
 });
 
 // ================= Access check =================
-const isActive = () => profile && (profile.admin || (profile.planUntil && profile.planUntil > Date.now()));
+const isActive = () => profile && (profile.admin || (!profile.blocked && profile.planUntil && profile.planUntil > Date.now()));
 function showPending() {
   const name = profile.name || user.name || "";
-  $("pendText").textContent = profile.planUntil
+  $("pendTitle").textContent = profile.blocked ? "Account blocked" : profile.planUntil ? "Subscription ended" : "Account created";
+  $("pendPlans").hidden = !!profile.blocked;
+  $("pendText").textContent = profile.blocked ? `Your account (${user.email}) is blocked. Please contact the academy.` : profile.planUntil
     ? `Your subscription ended on ${fmtDate(profile.planUntil)}. Renew it to keep making worksheets.`
     : `${name ? "Hi " + name + ", your" : "Your"} account (${user.email}) is ready. You can start making worksheets once your subscription is activated.`;
   $("pendPlans").textContent = APP.plansText;
@@ -1673,22 +1675,39 @@ async function loadUsers() {
 }
 function renderUsers() {
   const w = $("uSearch").value.trim().toLowerCase(), now = Date.now();
-  const list = usersCache.filter(u => !w || ((u.name || "") + " " + (u.email || "")).toLowerCase().includes(w));
+  const list = usersCache.filter(u => !w || ((u.name || "") + " " + (u.email || "")).toLowerCase().includes(w))
+    .sort((a, b) => (a.blocked ? 1 : 0) - (b.blocked ? 1 : 0));                   // blocked teachers at the bottom
   $("uList").innerHTML = list.length ? list.map(u => {
     const on = u.planUntil && u.planUntil > now;
-    const status = u.admin ? `<span class="pill adm">Admin</span>` : on ? `<span class="pill on">Active till ${fmtDate(u.planUntil)}</span>`
+    const status = u.admin ? `<span class="pill adm">Admin</span>` : u.blocked ? `<span class="pill blk">Blocked</span>` : on ? `<span class="pill on">Active till ${fmtDate(u.planUntil)}</span>`
       : u.planUntil ? `<span class="pill off">Expired ${fmtDate(u.planUntil)}</span>` : `<span class="pill off">Waiting for activation</span>`;
     const refBy = u.referredBy ? usersCache.find(x => x.uid === u.referredBy) : null;
     const refTxt = refBy ? ` · Referred by ${esc(refBy.name || refBy.email)}${u.referralRewarded ? " (rewarded)" : ""}` : "";
-    return `<div class="urow"><div class="uinfo"><b>${esc(u.name || "No name")}</b> · ${esc(u.email)}<br><span class="note">${status}${u.createdAt ? " · Joined " + fmtDate(u.createdAt) : ""}${refTxt}</span></div>
-      ${u.admin ? "" : `<div class="uacts"><button class="btn" data-uid="${esc(u.uid)}" data-act="m1">+1 month</button><button class="btn" data-uid="${esc(u.uid)}" data-act="y1">+1 year</button>${on ? `<button class="btn" data-uid="${esc(u.uid)}" data-act="stop">Stop</button>` : ""}</div>`}</div>`;
+    return `<div class="urow${u.blocked ? " blocked" : ""}"><div class="uinfo"><b>${esc(u.name || "No name")}</b> · ${esc(u.email)}<br><span class="note">${status}${u.createdAt ? " · Joined " + fmtDate(u.createdAt) : ""}${refTxt}</span></div>
+      ${u.admin ? "" : `<div class="uacts">${u.blocked ? `<button class="btn" data-uid="${esc(u.uid)}" data-act="unblock">Unblock</button>` : `<button class="btn" data-uid="${esc(u.uid)}" data-act="m1">+1 month</button><button class="btn" data-uid="${esc(u.uid)}" data-act="y1">+1 year</button>${on ? `<button class="btn" data-uid="${esc(u.uid)}" data-act="stop">Stop</button>` : ""}<button class="btn warnbtn" data-uid="${esc(u.uid)}" data-act="block">Block</button>`}<button class="btn dangerbtn" data-uid="${esc(u.uid)}" data-act="del">Delete</button></div>`}</div>`;
   }).join("") : `<div class="empty">No teachers found.</div>`;
 }
 $("uSearch").addEventListener("input", renderUsers);
 $("usersReload").onclick = loadUsers;
 $("uList").addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
-  const u = usersCache.find(x => x.uid === b.dataset.uid); if (!u) return;
+  const u = usersCache.find(x => x.uid === b.dataset.uid); if (!u || u.admin) return;
+  const act = b.dataset.act, who = esc(u.name ? `${u.name} (${u.email})` : u.email);
+  if (act === "block" || act === "unblock" || act === "del") {
+    const txt = act === "block" ? `<p style="margin:0">Block <b>${who}</b>?</p><p class="note" style="margin:6px 0 0">They will not be able to use the app until you unblock them. Their subscription and saved worksheets stay.</p>`
+      : act === "unblock" ? `<p style="margin:0">Unblock <b>${who}</b>?</p><p class="note" style="margin:6px 0 0">They can use the app again${u.planUntil && u.planUntil > Date.now() ? ` (active till ${fmtDate(u.planUntil)})` : ` once their subscription is active`}.</p>`
+      : `<p style="margin:0">Delete <b>${who}</b>?</p><p class="note" style="margin:6px 0 0">Their record and subscription are removed. Their saved worksheets stay. If they sign in again they come back as a new teacher without a subscription. (To remove their login completely: Firebase console → Authentication.)</p>`;
+    const v = await ask({ title: act === "block" ? "Block teacher?" : act === "unblock" ? "Unblock teacher?" : "Delete teacher?", html: txt,
+      buttons: [{ label: "Cancel", value: null }, { label: act === "block" ? "Block" : act === "unblock" ? "Unblock" : "Delete", value: "ok", cls: act === "unblock" ? "primary" : "dangerbtn" }] });
+    if (v !== "ok") return;
+    b.disabled = true;
+    try {
+      if (act === "del") { await api.deleteUser(u.uid); usersCache = usersCache.filter(x => x !== u); toast(`${u.name || u.email} deleted`); }
+      else { await api.setBlocked(u.uid, act === "block"); u.blocked = act === "block"; toast(`${u.name || u.email} ${u.blocked ? "blocked" : "unblocked"}`); }
+      renderUsers();
+    } catch (err) { b.disabled = false; toast("Could not update. Publish the new Firebase rules, then try again.", 5000); }
+    return;
+  }
   const from = Math.max(Date.now(), u.planUntil || 0);
   const until = b.dataset.act === "m1" ? from + 30 * DAY : b.dataset.act === "y1" ? from + 365 * DAY : null;
   b.disabled = true;
