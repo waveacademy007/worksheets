@@ -1,16 +1,16 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=4.3";
+import { createApi, DEMO } from "./api.js?v=4.4";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.3";
-import { SAMPLE } from "./sample-questions.js?v=4.3";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.3";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.4";
+import { SAMPLE } from "./sample-questions.js?v=4.4";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.4";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "4.3";
-const APP_DATE = "31 Oct 2026";
+const APP_VERSION = "4.4";
+const APP_DATE = "18 Nov 2026";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
