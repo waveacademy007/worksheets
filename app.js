@@ -1,15 +1,15 @@
 // Wave Worksheets — main app
-import { createApi, DEMO } from "./api.js?v=4.2";
+import { createApi, DEMO } from "./api.js?v=4.3";
 import { APP, MODE } from "./config.js";
 const OFFLINE = MODE === "offline";
 // Inside the Android app (APK) the page talks to the phone through this bridge
 const BRIDGE = window.AndroidBridge || null;
 const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
-import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.2";
-import { SAMPLE } from "./sample-questions.js?v=4.2";
-import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.2";
+import { TYPES, TYPE_ORDER, DEF_MARKS, KEY_TABLE, isMCQ, isProof, tfAns, AR_OPTS, CLASSES, SOURCES, parseSources, srcText } from "./constants.js?v=4.3";
+import { SAMPLE } from "./sample-questions.js?v=4.3";
+import { defaultSyllabus, mergeChapterMap, addFromQuestions, cleanSyllabus, findItem } from "./syllabus.js?v=4.3";
 // App version: change it (here, in index.html and in version.json) with every update
-const APP_VERSION = "4.2";
+const APP_VERSION = "4.3";
 const APP_DATE = "31 Oct 2026";
 
 const $ = id => document.getElementById(id);
@@ -56,7 +56,10 @@ const DAY = 86400000;
 const FONTS = {
   garamond: { fam: '"EB Garamond", Garamond, Georgia, serif', size: 14.6 },
   stix: { fam: '"STIX Two Text", "Times New Roman", serif', size: 13.6 },
-  source: { fam: '"Source Serif 4", "Bookman Old Style", Georgia, serif', size: 13.4 }
+  source: { fam: '"Source Serif 4", "Bookman Old Style", Georgia, serif', size: 13.4 },
+  merriweather: { fam: 'Merriweather, Georgia, serif', size: 12.6 },          // wide letters, so a smaller base size
+  notoserif: { fam: '"Noto Serif", Georgia, serif', size: 13 },
+  arimo: { fam: 'Arimo, Arial, Helvetica, sans-serif', size: 13.2 }           // looks like Arial
 };
 const DEFAULTS = { academy: "", teacher: "", phone: "", wm: "", logo: "", logoSize: 25, cls: "", topic: "",
   group: false, marks: false, key: true, wmOn: true, srcOn: false, font: "garamond", qScale: 100, imgSizes: {},
@@ -1620,7 +1623,7 @@ function build(){
 }
 // Load the worksheet font before measuring; otherwise lines are measured with a fallback font and columns break in the wrong place
 async function ensureFonts(){const f=curFont(),fam=f.fam.split(",")[0];
-  try{await Promise.race([Promise.all(["400","700","italic 400"].map(w=>document.fonts.load(`${w} ${f.size}px ${fam}`,"Ab"))),new Promise(r=>setTimeout(r,4000))])}catch(e){}
+  try{await Promise.race([Promise.all(["400","500","700","800"].map(w=>document.fonts.load(`${w} ${f.size}px ${fam}`,"Ab"))),new Promise(r=>setTimeout(r,4000))])}catch(e){}
   if([...picked.values()].some(q=>hasMath(q.text)||hasMath(q.case)||hasMath(q.reason)||(q.opts||[]).some(hasMath)||hasMath(q.ans))){
     try{await Promise.race([Promise.all(["KaTeX_Main","italic KaTeX_Math","KaTeX_Size1","KaTeX_Size2","KaTeX_AMS"].map(f=>document.fonts.load("16px "+f.replace(/^italic /,"")+(f.startsWith("italic")?"":""),"a"))),new Promise(r=>setTimeout(r,4000))])}catch(e){}
     try{await document.fonts.load("italic 16px KaTeX_Math","x")}catch(e){}}
